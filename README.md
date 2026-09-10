@@ -284,7 +284,6 @@ uvicorn main:app --reload
 
 ## Документы
 
-- [docs/DEMO.md](docs/DEMO.md) — сценарий демонстрации на 4 минуты
 - [docs/SECURITY.md](docs/SECURITY.md) — отчёт о проверке защиты API
 - [docs/AI_USAGE.md](docs/AI_USAGE.md) — какие нейросети использовали и для чего
 
