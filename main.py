@@ -24,6 +24,7 @@ logging.basicConfig(
 log = logging.getLogger("helpme")
 
 from api import chat as chat_api        # noqa: E402
+from api import operator as operator_api  # noqa: E402
 from api import tickets as tickets_api  # noqa: E402
 from db import repo                     # noqa: E402
 
@@ -46,6 +47,7 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:
 
 app.include_router(chat_api.router)
 app.include_router(tickets_api.router)
+app.include_router(operator_api.router)
 
 
 @app.get("/health")

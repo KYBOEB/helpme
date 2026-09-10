@@ -16,8 +16,25 @@ engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread"
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
+# Колонки, добавленные после первого релиза. SQLite умеет ALTER TABLE ADD COLUMN,
+# поэтому обходимся без миграций: база на сервере переживает обновление.
+_NEW_COLUMNS = {
+    "tickets": {
+        "assist_used": "BOOLEAN DEFAULT 0",
+        "operator_taken": "BOOLEAN DEFAULT 0",
+        "share_token": "VARCHAR(64)",
+    },
+}
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        for table, columns in _NEW_COLUMNS.items():
+            existing = {r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
 
 def get_session() -> Session:
@@ -30,9 +47,19 @@ def get_ticket(db: Session, ticket_id: str) -> Ticket | None:
     return db.get(Ticket, ticket_id)
 
 
-def list_tickets(db: Session, limit: int = 200) -> list[Ticket]:
-    stmt = select(Ticket).order_by(Ticket.created_at.desc()).limit(limit)
-    return list(db.scalars(stmt))
+def list_tickets(db: Session, limit: int = 200,
+                 state: str | None = None, queue: bool = False) -> list[Ticket]:
+    stmt = select(Ticket)
+    if queue:
+        # очередь специалиста: передано человеку и ещё не взято в работу
+        stmt = stmt.where(Ticket.needs_specialist.is_(True),
+                          Ticket.operator_taken.is_(False))
+        stmt = stmt.order_by(Ticket.created_at.asc())   # первым — самое старое
+    else:
+        if state:
+            stmt = stmt.where(Ticket.state == state)
+        stmt = stmt.order_by(Ticket.created_at.desc())
+    return list(db.scalars(stmt.limit(limit)))
 
 
 def add_message(db: Session, ticket_id: str, role: str, content: str) -> None:

@@ -4,9 +4,10 @@ from __future__ import annotations
 import json
 from collections import Counter
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core import security
+from core.auth import require_operator
 from db import repo
 
 router = APIRouter(prefix="/api", tags=["tickets"])
@@ -22,22 +23,44 @@ def _brief(t) -> dict:
         "confidence": round(t.confidence, 2),
         "problem_summary": t.problem_summary,
         "resolved_by_bot": t.resolved_by_bot,
+        "assist_used": t.assist_used,
+        "operator_taken": t.operator_taken,
         "needs_specialist": t.needs_specialist,
         "user_actions_count": t.user_actions_count,
         "rating": t.rating,
     }
 
 
-@router.get("/tickets")
-def list_tickets() -> list[dict]:
+@router.get("/tickets", dependencies=[Depends(require_operator)])
+def list_tickets(state: str | None = None, queue: bool = False,
+                 limit: int = 200) -> list[dict]:
+    """Список обращений. queue=1 — только те, что ждут специалиста."""
     db = repo.get_session()
     try:
-        return [_brief(t) for t in repo.list_tickets(db)]
+        limit = max(1, min(limit, 1000))
+        return [_brief(t) for t in repo.list_tickets(db, limit=limit,
+                                                     state=state, queue=queue)]
     finally:
         db.close()
 
 
-@router.get("/tickets/{ticket_id}")
+@router.post("/tickets/{ticket_id}/take", dependencies=[Depends(require_operator)])
+def take(ticket_id: str) -> dict:
+    """Оператор взял обращение в работу — оно уходит из очереди."""
+    db = repo.get_session()
+    try:
+        t = repo.get_ticket(db, ticket_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="Обращение не найдено")
+        t.operator_taken = True
+        repo.log_event(db, ticket_id, "operator_took")
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.get("/tickets/{ticket_id}", dependencies=[Depends(require_operator)])
 def get_ticket(ticket_id: str) -> dict:
     db = repo.get_session()
     try:
@@ -88,7 +111,7 @@ def escalate(ticket_id: str, payload: dict = Body(default={})) -> dict:
         db.close()
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(require_operator)])
 def stats() -> dict:
     """Метрики дашборда. Главная — среднее число действий пользователя."""
     db = repo.get_session()
@@ -102,6 +125,9 @@ def stats() -> dict:
             "total": len(tickets),
             "finished": len(finished),
             "resolved_by_bot": len(solved),
+            "waiting_operator": len([t for t in tickets
+                                     if t.needs_specialist and not t.operator_taken]),
+            "assist_used": len([t for t in tickets if t.assist_used]),
             "resolved_by_bot_share": round(len(solved) / len(finished), 3) if finished else 0.0,
             "avg_user_actions": round(sum(actions) / len(actions), 2) if actions else 0.0,
             "by_category": dict(Counter(t.category for t in tickets if t.category)),
@@ -110,6 +136,7 @@ def stats() -> dict:
         }
     finally:
         db.close()
+
 
 # ---------------------------------------------------------------- база знаний
 
@@ -138,3 +165,36 @@ def kb_search(q: str = "", limit: int = 10) -> list[dict]:
         "required_slots": [s.key for s in a.required_slots if not s.optional],
         "has_solution": bool(a.steps),
     } for a, score in articles]
+
+
+@router.get("/kb/gaps", dependencies=[Depends(require_operator)])
+def kb_gaps(limit: int = 100) -> list[dict]:
+    """Обращения, для которых в базе знаний не нашлось статьи.
+
+    Готовый список тем для новых карточек: база растёт на реальных обращениях.
+    """
+    import json as _json
+
+    from db.models import Event
+
+    db = repo.get_session()
+    try:
+        rows = (db.query(Event)
+                  .filter(Event.type == "kb_gap")
+                  .order_by(Event.created_at.desc())
+                  .limit(max(1, min(limit, 500))).all())
+        out = []
+        for e in rows:
+            try:
+                payload = _json.loads(e.payload or "{}")
+            except ValueError:
+                payload = {}
+            out.append({
+                "ticket_id": e.ticket_id,
+                "created_at": e.created_at.isoformat(),
+                "query": payload.get("query", ""),
+                "category": payload.get("category"),
+            })
+        return out
+    finally:
+        db.close()
