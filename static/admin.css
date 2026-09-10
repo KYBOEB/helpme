@@ -1,0 +1,440 @@
+/* ==========================================================================
+   «Помоги мне» — стили панели оператора
+   Дополняет style.css: переменные и .btn берутся оттуда, здесь только панель.
+   Всё, кроме .hidden, ограничено .admin-body, чтобы не задеть страницу чата.
+   ========================================================================== */
+
+.hidden { display: none !important; }
+
+/* ---------- Каркас ---------- */
+
+.admin-body {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.admin-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 1rem 1.5rem 0;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-header h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+.admin-main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+/* ---------- Вкладки ---------- */
+
+.admin-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.admin-body .tab {
+  padding: 0.625rem 1rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur), border-color var(--dur), background-color var(--dur);
+}
+
+.admin-body .tab:hover { color: var(--text); background: var(--bg); }
+
+.admin-body .tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.admin-body .tab-panel { display: none; }
+.admin-body .tab-panel.is-active { display: block; }
+
+/* ---------- Фильтры ---------- */
+
+.admin-body .filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-body .filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.admin-body .filters select,
+.admin-body .filters input {
+  min-height: 2.5rem;
+  min-width: 11rem;
+  padding: 0.375rem 0.75rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 400;
+}
+
+.admin-body .filters select:focus,
+.admin-body .filters input:focus { border-color: var(--accent); outline: none; }
+
+/* Кнопки: в style.css .btn без фона, здесь делаем его основным */
+.admin-body .btn {
+  background: var(--accent);
+  color: #fff;
+  min-height: 2.5rem;
+  padding: 0.5rem 1.125rem;
+  border-radius: var(--radius-sm);
+}
+.admin-body .btn:hover { background: var(--accent-hover); }
+
+.admin-body .btn-ghost {
+  min-height: 2rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.admin-body .btn-ghost:hover { color: var(--accent); }
+
+/* ---------- Таблица обращений ---------- */
+
+.admin-body .table-wrap {
+  overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.admin-body .tickets-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+}
+
+.admin-body .tickets-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-body .tickets-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-body .tickets-table tbody tr:last-child td { border-bottom: 0; }
+
+.admin-body .tickets-table tbody tr {
+  cursor: pointer;
+  transition: background-color var(--dur);
+}
+.admin-body .tickets-table tbody tr:hover { background: var(--accent-soft); }
+
+.admin-body .tickets-table td:first-child {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* Пустое состояние: в style.css .empty рассчитан на чат, здесь свой вид */
+.admin-body .empty {
+  max-width: none;
+  margin: 0;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Цветные метки статуса и уверенности — admin.js может их не ставить,
+   тогда правила просто не сработают */
+.admin-body .badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.admin-body .badge--ok   { background: var(--ok-soft);     color: var(--ok); }
+.admin-body .badge--warn { background: var(--warn-soft);   color: var(--warn); }
+.admin-body .badge--info { background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- Аналитика ---------- */
+
+.admin-body .hero-metric {
+  padding: 2rem 1.5rem;
+  margin-bottom: 1.25rem;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.admin-body .hero-value {
+  font-size: clamp(3rem, 8vw, 4.5rem);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-body .hero-label {
+  margin-top: 0.5rem;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.admin-body .hero-note {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.admin-body .analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.admin-body .card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.admin-body .card h3 {
+  margin: 0;
+  align-self: flex-start;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.admin-body .stat-value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-body .muted {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Кольцевая диаграмма: процент передаётся как --p */
+.admin-body .donut {
+  display: grid;
+  place-items: center;
+  width: 9rem;
+  height: 9rem;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--accent) calc(var(--p, 0) * 1%),
+    var(--border) 0
+  );
+}
+
+.admin-body .donut-hole {
+  display: grid;
+  place-items: center;
+  width: 6.5rem;
+  height: 6.5rem;
+  border-radius: 50%;
+  background: var(--card);
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Горизонтальные полосы по категориям */
+.admin-body .bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  width: 100%;
+}
+
+.admin-body .bar {
+  display: grid;
+  grid-template-columns: minmax(6rem, 8rem) 1fr auto;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 0.875rem;
+}
+
+.admin-body .bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.admin-body .bar-track {
+  height: 0.5rem;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.admin-body .bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 400ms ease;
+}
+
+.admin-body .bar-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- База знаний ---------- */
+
+.admin-body .kb-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0.875rem;
+}
+
+.admin-body .kb-item,
+.admin-body .kb-card {
+  padding: 1rem 1.125rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.admin-body .kb-item h4,
+.admin-body .kb-card h4 { margin: 0 0 0.375rem; font-size: 1rem; }
+
+.admin-body .kb-item ol,
+.admin-body .kb-card ol {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* ---------- Боковая панель обращения ---------- */
+
+.admin-body .drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(28rem, 100vw);
+  height: 100vh;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 32px rgba(26, 26, 26, 0.12);
+}
+
+.admin-body .drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-body .drawer-head h2 { margin: 0; font-size: 1.0625rem; }
+
+.admin-body .drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+  font-size: 0.9375rem;
+}
+
+.admin-body .drawer-body h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.admin-body .drawer-body h3:first-child { margin-top: 0; }
+
+.admin-body .drawer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+
+.admin-body .switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.admin-body .switch input { width: 1.125rem; height: 1.125rem; accent-color: var(--accent); }
+
+/* ---------- Телефон ---------- */
+
+@media (max-width: 720px) {
+  .admin-header { padding: 0.875rem 1rem 0; }
+  .admin-main { padding: 1rem; }
+  .admin-body .filters select,
+  .admin-body .filters input { min-width: 0; width: 100%; }
+  .admin-body .filters label { flex: 1 1 100%; }
+  .admin-body .analytics-grid { grid-template-columns: 1fr; }
+  .admin-body .kb-results { grid-template-columns: 1fr; }
+}
