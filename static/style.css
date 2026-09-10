@@ -16,6 +16,9 @@
   --ok-soft: #E5F3EB;
   --warn: #8A5A00;
   --warn-soft: #FFF3D1;
+  --radius-sm: 8px;
+  --warn: #8A5A00;
+  --warn-soft: #FFF3D1;
 
   --radius: 12px;
   --radius-sm: 8px;

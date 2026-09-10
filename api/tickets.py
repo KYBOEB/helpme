@@ -200,7 +200,7 @@ def kb_gaps(limit: int = 100) -> list[dict]:
     db = repo.get_session()
     try:
         rows = (db.query(Event)
-                  .filter(Event.type == "kb_gap")
+                  .filter(Event.type.in_(("kb_gap", "kb_insufficient")))
                   .order_by(Event.created_at.desc())
                   .limit(max(1, min(limit, 500))).all())
         out = []
@@ -210,6 +210,8 @@ def kb_gaps(limit: int = 100) -> list[dict]:
             except ValueError:
                 payload = {}
             out.append({
+                "kind": "нет статьи" if e.type == "kb_gap" else "статья не помогла",
+                "article_id": payload.get("article_id"),
                 "ticket_id": e.ticket_id,
                 "created_at": e.created_at.isoformat(),
                 "query": payload.get("query", ""),

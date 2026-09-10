@@ -9,7 +9,7 @@
 
 // ---------- Настройки ----------
 
-const MOCK = true;  // переключается на false, когда бэкенд готов
+const MOCK = false;  // переключается на false, когда бэкенд готов
 
 const API_CHAT = "/api/chat";
 const MAX_LEN = 2000;             // лимит длины сообщения

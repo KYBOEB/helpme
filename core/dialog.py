@@ -124,6 +124,8 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
             "Я не нашёл в базе знаний подходящей инструкции.",
         "шаги из базы знаний не помогли":
             "Стандартные шаги не помогли — значит случай нетиповой.",
+        "рекомендации не помогли":
+            "Ни инструкция из базы, ни общие рекомендации не помогли.",
         "обращение вне тематики технической поддержки":
             "Этот вопрос выходит за рамки технической поддержки.",
         "пользователь запросил специалиста": "Конечно.",
@@ -137,7 +139,8 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
     return _respond(db, ticket, Reply(type="escalation", text=text), with_card=True)
 
 
-def _assist(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
+def _assist(db: Session, ticket: Ticket, user_text: str,
+            reason: str = "gap") -> ChatResponse:
     """Второй уровень каскада: в базе знаний решения нет.
 
     Умная модель даёт общую рекомендацию, но она честно помечается как НЕ из
@@ -145,8 +148,13 @@ def _assist(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     записывается как пробел в базе — по нему потом напишут статью.
     """
     safe_text, _ = redact(user_text)
-    repo.log_event(db, ticket.id, "kb_gap",
-                   {"query": safe_text[:300], "category": ticket.category})
+    # gap — статьи нет вовсе; insufficient — статья нашлась, но шаги не помогли.
+    # И то и другое стоит показать оператору: первое просит новую карточку,
+    # второе — доработать существующую.
+    repo.log_event(db, ticket.id,
+                   "kb_gap" if reason == "gap" else "kb_insufficient",
+                   {"query": safe_text[:300], "category": ticket.category,
+                    "article_id": ticket.article_id})
 
     answer = assist.general_help(safe_text, ticket.category or "не определено")
     if answer is None:
@@ -158,7 +166,10 @@ def _assist(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     ticket.steps_json = json.dumps(answer.steps, ensure_ascii=False)
     repo.log_event(db, ticket.id, "assisted", {"steps": len(answer.steps)})
 
-    intro = answer.text or "Готовой инструкции для этого случая в базе знаний нет."
+    if reason == "gap":
+        intro = answer.text or "Готовой инструкции для этого случая в базе знаний нет."
+    else:
+        intro = "Шаги из базы знаний не помогли — попробуем общие рекомендации."
     text = (f"{intro} Обращение уже передано специалисту — он подключится. "
             f"А пока можно попробовать общие шаги, они безопасны.")
 
@@ -293,7 +304,13 @@ def _verify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     failed = any(w in low for w in ("не получилось", "не помогло", "не работает", "нет"))
 
     if failed and not low.startswith("получилось"):
-        return _escalate(db, ticket, "шаги из базы знаний не помогли")
+        # Второй уровень каскада: шаги из базы не помогли — пробуем общую
+        # рекомендацию. Человека зовём, только если и она не сработала.
+        if ticket.assist_used:
+            return _escalate(db, ticket, "рекомендации не помогли")
+        return _assist(db, ticket,
+                       ticket.problem_summary or "шаги из базы знаний не помогли",
+                       reason="insufficient")
 
     if ok:
         ticket.state = "RESOLVED"
