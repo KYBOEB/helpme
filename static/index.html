@@ -12,27 +12,18 @@
 <body>
   <div class="app">
 
-    <!-- Шапка -->
+    <!-- Шапка: название; в диалоге слева появляется кнопка «На главную» -->
     <header class="header">
-      <div class="brand">
-        <div class="brand-logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>
-            <path d="M9.6 9.6a2.4 2.4 0 0 1 4.7.6c0 1.6-2.3 2.1-2.3 3.3"/>
-            <path d="M12 16.4h.01"/>
-          </svg>
-        </div>
-        <div class="brand-text">
-          <div class="brand-row">
-            <h1 class="brand-title">Помоги мне</h1>
-            <span id="mock-badge" class="mock-badge" hidden title="Ответы берутся из app.js, бэкенд не используется">моки</span>
-          </div>
-          <p class="brand-subtitle">Виртуальный помощник техподдержки</p>
-        </div>
+      <button id="back-btn" class="back-btn" type="button" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m15 18-6-6 6-6"/>
+        </svg>
+        <span>На главную</span>
+      </button>
+      <div class="header-brand">
+        <h1 class="header-title">Помоги мне</h1>
+        <p class="header-subtitle">Виртуальный помощник техподдержки</p>
       </div>
-      <a class="header-link" href="/static/admin.html">
-        <span class="link-full">Панель оператора</span><span class="link-short" aria-hidden="true">Оператор</span>
-      </a>
     </header>
 
     <!-- Этап 4: здесь появится полоса «У вас есть незавершённое обращение» (4.7) -->
@@ -40,23 +31,50 @@
     <!-- Прокручиваемая область -->
     <main id="chat" class="chat">
 
-      <!-- Пустое состояние -->
+      <!-- Главный экран: логотип, приветствие, поле ввода по центру, частые проблемы -->
       <section id="empty" class="empty">
-        <h2 class="empty-title">Здравствуйте! Что случилось?</h2>
-        <p class="empty-text">Опишите проблему своими словами или выберите похожую:</p>
-        <div class="examples">
-          <button type="button" class="example" data-example="Не подключается VPN">
-            <span class="example-icon" aria-hidden="true">🔒</span>Не подключается VPN
-          </button>
-          <button type="button" class="example" data-example="Не могу подключиться к корпоративному Wi-Fi">
-            <span class="example-icon" aria-hidden="true">📶</span>Не подключается Wi-Fi
-          </button>
-          <button type="button" class="example" data-example="Не печатает принтер">
-            <span class="example-icon" aria-hidden="true">🖨️</span>Не печатает принтер
-          </button>
-          <button type="button" class="example" data-example="Забыл пароль от учётной записи">
-            <span class="example-icon" aria-hidden="true">🔑</span>Забыл пароль
-          </button>
+        <div class="empty-inner">
+          <!-- Плашка с логотипом компании.
+               ЛОГОТИП: файл кладётся в static/img/aktion-logo.png.
+               Если папка или имя файла другие — поменяйте src в строке ниже. -->
+          <div class="hero-logo">
+            <img src="/static/img/aktion-logo.png" alt="Актион" width="509" height="71">
+          </div>
+          <h2 class="empty-title">Здравствуйте! Что случилось?</h2>
+          <p class="empty-text">Опишите проблему своими словами — помощник подберёт решение.</p>
+
+          <!-- Сюда встаёт поле ввода на главном экране. В диалоге app.js переносит его вниз, в #dock -->
+          <div id="hero-slot" class="hero-slot">
+            <div id="composer" class="composer">
+              <div class="composer-box">
+                <label for="input" class="visually-hidden">Опишите проблему</label>
+                <textarea id="input" rows="1" placeholder="Опишите проблему…" autocomplete="off"></textarea>
+                <span id="counter" class="counter" hidden aria-live="polite"></span>
+                <button id="send-btn" class="send-btn" type="button" aria-label="Отправить" disabled>
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
+                  </svg>
+                </button>
+              </div>
+              <p class="composer-hint">Enter — отправить, Shift+Enter — новая строка</p>
+            </div>
+          </div>
+
+          <p class="examples-title">Или выберите частую проблему:</p>
+          <div class="examples">
+            <button type="button" class="example" data-example="Не подключается VPN">
+              <span class="example-icon" aria-hidden="true">🔒</span>Не подключается VPN
+            </button>
+            <button type="button" class="example" data-example="Не могу подключиться к корпоративному Wi-Fi">
+              <span class="example-icon" aria-hidden="true">📶</span>Не подключается Wi-Fi
+            </button>
+            <button type="button" class="example" data-example="Не печатает принтер">
+              <span class="example-icon" aria-hidden="true">🖨️</span>Не печатает принтер
+            </button>
+            <button type="button" class="example" data-action="other">
+              <span class="example-icon" aria-hidden="true">💬</span>Другая проблема
+            </button>
+          </div>
         </div>
       </section>
 
@@ -64,20 +82,8 @@
       <div id="feed" class="feed" role="log" aria-live="polite" aria-label="Диалог с помощником"></div>
     </main>
 
-    <!-- Поле ввода -->
-    <footer class="composer">
-      <div class="composer-inner">
-        <label for="input" class="visually-hidden">Опишите проблему</label>
-        <textarea id="input" rows="1" placeholder="Опишите проблему…" autocomplete="off"></textarea>
-        <span id="counter" class="counter" hidden aria-live="polite"></span>
-        <button id="send-btn" class="send-btn" type="button" aria-label="Отправить" disabled>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
-          </svg>
-        </button>
-      </div>
-      <p class="composer-hint">Enter — отправить, Shift+Enter — новая строка</p>
-    </footer>
+    <!-- Нижняя панель: сюда переезжает поле ввода, когда начался диалог -->
+    <footer id="dock" class="dock" hidden></footer>
 
   </div>
 </body>

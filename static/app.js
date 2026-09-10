@@ -2,9 +2,9 @@
 
 /* ==========================================================================
    «Помоги мне» — страница чата
-   Этап 1: моки + каркас + отрисовка question и steps (choice — заодно,
-   он рисуется так же, как question). summary/escalation — временная
-   заглушка, полноценная карточка будет на этапе 2.
+   Этап 1: моки + каркас + отрисовка question, choice и steps.
+   summary/escalation — временная заглушка, полноценная карточка
+   будет на этапе 2.
    ========================================================================== */
 
 // ---------- Настройки ----------
@@ -16,14 +16,19 @@ const MAX_LEN = 2000;             // лимит длины сообщения
 const COUNTER_FROM = 1800;        // счётчик появляется после этого числа символов
 const REQUEST_TIMEOUT_MS = 20000; // дольше ждать нет смысла — показываем ошибку
 
-// Служебные ответы кнопок пошагового гида.
-// ВНИМАНИЕ: значение для «Получилось» на промежуточном шаге в ТЗ не задано —
-// согласовать с бэкендом и поправить здесь.
+// Итог пошагового гида (решение тимлида): сервер присылает ВСЕ шаги сразу,
+// клиент показывает их по одному и отправляет на сервер ОДНО сообщение за весь гид.
+//   «Всё получилось» на любом шаге      → quick_reply "Получилось"
+//   «Проблема ещё не решена» на последнем → quick_reply "Не получилось"
+// Кем решена проблема (ботом или специалистом) — определяет бэкенд в ticket_card.
 const QR = {
-  RESOLVED: "решено",
-  STEP_OK: "получилось",
-  NOT_HELPED: "не помогло",
+  SOLVED: "Получилось",
+  NOT_SOLVED: "Не получилось",
 };
+
+// Сообщение, когда шаги из базы знаний не помогли и дальше отвечает ИИ (source: "general")
+const AI_HANDOFF_TEXT = "Рекомендации из базы знаний не помогли. Сейчас вам ответит ИИ-ассистент, ожидайте.";
+const GENERAL_BADGE_TEXT = "Общая рекомендация, решения нет в базе знаний";
 
 // Человеческие тексты ошибок вместо «Error 429»
 const ERROR_TEXT = {
@@ -36,8 +41,8 @@ const ERROR_TEXT = {
   default: "Что-то пошло не так. Повторите запрос.",
 };
 
-// Иконка помощника (инлайновый SVG, без внешних файлов)
-const ICON_BOT = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.6 9.6a2.4 2.4 0 0 1 4.7.6c0 1.6-2.3 2.1-2.3 3.3"/><path d="M12 16.4h.01"/></svg>`;
+// Логотип-аватар помощника: спасательный круг (инлайновый SVG, без внешних файлов)
+const ICON_BOT = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M5.64 5.64l3.53 3.53M14.83 14.83l3.53 3.53M14.83 9.17l3.53-3.53M9.17 14.83l-3.53 3.53"/></svg>`;
 
 // ---------- Состояние ----------
 
@@ -45,13 +50,13 @@ const state = {
   ticketId: null,
   token: null,
   busy: false,
-  // Запасной счётчик шагов — если бэкенд не присылает reply.step_index
-  stepTrack: { key: null, index: -1 },
+  conv: 0, // номер диалога: ответы на запросы из прошлого диалога не отрисовываются
 };
 
 // ---------- DOM ----------
 
 let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl;
+let composerEl, heroSlotEl, dockEl, backBtn;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 document.addEventListener("DOMContentLoaded", init);
@@ -63,21 +68,33 @@ function init() {
   inputEl = document.getElementById("input");
   sendBtn = document.getElementById("send-btn");
   counterEl = document.getElementById("counter");
+  composerEl = document.getElementById("composer");
+  heroSlotEl = document.getElementById("hero-slot");
+  dockEl = document.getElementById("dock");
+  backBtn = document.getElementById("back-btn");
 
-  document.getElementById("mock-badge").hidden = !MOCK;
+  // Режим моков виден только разработчику: во вкладке браузера и в консоли
+  if (MOCK) {
+    document.title = "[MOCK] " + document.title;
+    console.warn("Режим моков: ответы берутся из app.js. Перед защитой поставьте MOCK = false.");
+  }
 
   inputEl.maxLength = MAX_LEN;
   inputEl.addEventListener("input", onInput);
   inputEl.addEventListener("keydown", onKeydown);
   sendBtn.addEventListener("click", submitInput);
 
-  // Примеры обращений: клик сразу отправляет
-  document.querySelectorAll("[data-example]").forEach((btn) => {
+  // Частые проблемы: клик сразу отправляет, «Другая проблема» — просит описать
+  document.querySelectorAll(".example").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (btn.dataset.action === "other") return startOtherProblem();
       const text = btn.dataset.example;
       send({ message: text }, { echo: text });
     });
   });
+
+  // «На главную»: просто уходим из диалога, ничего не отправляя
+  backBtn.addEventListener("click", resetConversation);
 
   // Этап 4: проверить localStorage и показать полосу незавершённого обращения
 
@@ -93,16 +110,17 @@ function init() {
 /**
  * Единая точка отправки в /api/chat.
  * @param {{message?: string, quickReply?: string}} input
- * @param {{echo?: string, requestId?: string}} opts
+ * @param {{echo?: string, requestId?: string, afterReply?: Function}} opts
  *   echo — текст, который показать в ленте как сообщение пользователя;
- *   requestId — передаётся при повторе, чтобы бэкенд мог отбросить дубль.
+ *   requestId — передаётся при повторе, чтобы бэкенд мог отбросить дубль;
+ *   afterReply — вызывается с ответом сервера перед отрисовкой.
  */
-async function send({ message = null, quickReply = null }, { echo = null, requestId = null } = {}) {
+async function send({ message = null, quickReply = null }, { echo = null, requestId = null, afterReply = null } = {}) {
   if (state.busy) return;                         // второе нажатие игнорируем
   const text = typeof message === "string" ? message.trim() : "";
   if (!quickReply && !text) return;               // пустое не отправляем
 
-  emptyEl.hidden = true;
+  setMode("chat");                                // поле ввода уезжает вниз
   retireActiveControls();                         // старые кнопки больше не актуальны
   if (echo) addUserMessage(echo);
 
@@ -114,6 +132,7 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
     quick_reply: quickReply || null,
   };
 
+  const conv = state.conv;
   setBusy(true);
   showTyping();
 
@@ -124,6 +143,9 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
   } catch (e) {
     error = e;
   }
+
+  // Пользователь уже ушёл на главную — ответ старого диалога не показываем
+  if (conv !== state.conv) return;
 
   hideTyping();
   setBusy(false);
@@ -138,6 +160,7 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
   // Этап 4: сохранить ticket_id и token в localStorage (в try/catch)
 
   try {
+    if (afterReply) afterReply(data);
     render(data, payload);
   } catch (e) {
     console.error("Не удалось отрисовать ответ", e, data);
@@ -208,10 +231,26 @@ function render(data, payload) {
   }
 }
 
+// source: "general" — ответ не из базы знаний: плашка и приглушённое оформление.
+// Поле необязательное: если его нет, считаем ответ обычным (из базы знаний).
+function isGeneral(data) {
+  return data.reply?.source === "general";
+}
+
+function markGeneral(msg) {
+  msg.row.classList.add("msg--general");
+  const badge = el("div", "source-badge");
+  const icon = el("span", "source-badge-icon", "i");
+  icon.setAttribute("aria-hidden", "true");
+  badge.append(icon, GENERAL_BADGE_TEXT);
+  msg.body.prepend(badge);
+}
+
 // question — вопрос + кнопки быстрых ответов
 function renderQuestion(data) {
   const { reply } = data;
   const msg = addBotMessage(reply.text);
+  if (isGeneral(data)) markGeneral(msg);
   // Этап 2: renderBadge(msg.body, data) — категория, уверенность, источник (4.4)
   renderQuickReplies(msg.body, reply.quick_replies);
   scrollToMessage(msg.row);
@@ -221,6 +260,7 @@ function renderQuestion(data) {
 function renderChoice(data) {
   const { reply } = data;
   const msg = addBotMessage(reply.text || "Уточните, пожалуйста, о чём речь:");
+  if (isGeneral(data)) markGeneral(msg);
   renderQuickReplies(msg.body, reply.quick_replies);
   scrollToMessage(msg.row);
 }
@@ -248,22 +288,29 @@ function renderQuickReplies(container, options) {
   focusIfLost(group.firstElementChild);
 }
 
-// steps — пошаговый гид: показываем ровно один шаг
+// steps — сервер присылает все шаги сразу, клиент показывает их по одному.
+// Переход к следующему шагу — без запроса к серверу.
 function renderSteps(data) {
   const { reply } = data;
-  const steps = Array.isArray(reply.steps) ? reply.steps : [];
+  const steps = (Array.isArray(reply.steps) ? reply.steps : []).map(stepText).filter(Boolean);
   if (steps.length === 0) return renderQuestion(data);
 
-  const index = resolveStepIndex(data, steps);
-  const total = steps.length;
-  const text = stepText(steps[index]);
-  const label = `Шаг ${index + 1} из ${total}: ${text}`;
-
+  const source = isGeneral(data) ? "general" : "kb";
   const msg = addBotMessage(reply.text, { wide: true });
+  if (source === "general") markGeneral(msg);
+  showStep(msg.body, steps, 0, source);
+  // Кнопки из quick_replies (например «Позвать специалиста») — наравне с шагами
+  renderQuickReplies(msg.body, reply.quick_replies);
+  scrollToMessage(msg.row);
+}
+
+function showStep(container, steps, index, source) {
+  const total = steps.length;
+  const text = steps[index];
 
   const card = el("div", "step-card");
   card.dataset.active = "step";
-  card.dataset.label = label;
+  card.dataset.label = `Шаг ${index + 1} из ${total}: ${text}`;
 
   const head = el("div", "step-head");
   head.append(el("span", "step-counter", `Шаг ${index + 1} из ${total}`));
@@ -285,27 +332,46 @@ function renderSteps(data) {
   const body = el("p", "step-text", text);
 
   const actions = el("div", "step-actions");
-  const okBtn = el("button", "btn btn--primary", "Получилось");
-  const failBtn = el("button", "btn btn--ghost", "Не получилось");
+  const okBtn = el("button", "btn btn--primary", "Всё получилось");
+  const failBtn = el("button", "btn btn--ghost", "Проблема ещё не решена");
   okBtn.type = failBtn.type = "button";
-  okBtn.addEventListener("click", () => answerStep(card, true, index, total));
-  failBtn.addEventListener("click", () => answerStep(card, false, index, total));
+  okBtn.addEventListener("click", () => answerStep(card, true, steps, index, source));
+  failBtn.addEventListener("click", () => answerStep(card, false, steps, index, source));
   actions.append(okBtn, failBtn);
 
   card.append(head, progress, body, actions);
-  msg.body.append(card);
-
-  scrollToMessage(msg.row);
+  // Новый шаг встаёт над кнопками быстрых ответов, если они есть
+  const chips = container.querySelector(":scope > .quick-replies");
+  if (chips) container.insertBefore(card, chips);
+  else container.append(card);
   focusIfLost(okBtn);
+  return card;
 }
 
-function answerStep(card, ok, index, total) {
+// «Всё получилось» — сразу одно сообщение на сервер, дальше шаги не показываем.
+// «Проблема ещё не решена» — следующий шаг локально; на последнем шаге — одно сообщение.
+function answerStep(card, solved, steps, index, source) {
   if (state.busy || card.dataset.active !== "step") return; // двойное нажатие
-  collapseStep(card, ok ? "ok" : "failed");
+  collapseStep(card, solved ? "ok" : "failed");
 
-  const isLast = index >= total - 1;
-  const quickReply = ok ? (isLast ? QR.RESOLVED : QR.STEP_OK) : QR.NOT_HELPED;
-  send({ quickReply });
+  if (solved) return send({ quickReply: QR.SOLVED });
+
+  if (index < steps.length - 1) {
+    const next = showStep(card.parentElement, steps, index + 1, source);
+    scrollToMessage(next);
+    return;
+  }
+
+  // Шаги кончились. Если это были шаги из базы знаний — предупреждаем, что дальше ответит ИИ.
+  // Если сервер вместо ИИ-ответа пришлёт что-то другое, предупреждение убираем.
+  if (source === "kb") {
+    const note = addBotMessage(AI_HANDOFF_TEXT);
+    scrollToMessage(note.row);
+    return send({ quickReply: QR.NOT_SOLVED }, {
+      afterReply: (data) => { if (!isGeneral(data)) note.row.remove(); },
+    });
+  }
+  send({ quickReply: QR.NOT_SOLVED });
 }
 
 // Сворачиваем шаг: остаётся в ленте приглушённым, с отметкой результата
@@ -316,7 +382,7 @@ function collapseStep(card, result) {
   card.replaceChildren();
 
   const marks = { ok: "✓", failed: "✕", skipped: "–" };
-  const srText = { ok: "Выполнено. ", failed: "Не получилось. ", skipped: "Пропущено. " };
+  const srText = { ok: "Проблема решена на этом шаге. ", failed: "Не помогло. ", skipped: "Пропущено. " };
 
   const mark = el("span", "step-mark", marks[result]);
   mark.setAttribute("aria-hidden", "true");
@@ -327,50 +393,138 @@ function collapseStep(card, result) {
   card.append(mark, textEl);
 }
 
-// Какой шаг показывать. Предпочитаем reply.step_index от бэкенда.
-function resolveStepIndex(data, steps) {
-  let index;
-  if (Number.isInteger(data.reply.step_index)) {
-    index = data.reply.step_index;
-  } else {
-    // Запасной вариант: тот же набор шагов пришёл повторно — значит, следующий
-    const key = (data.article?.id || "") + "|" + steps.map(stepText).join("|");
-    index = state.stepTrack.key === key ? state.stepTrack.index + 1 : 0;
-    state.stepTrack.key = key;
-  }
-  index = Math.min(Math.max(index, 0), steps.length - 1);
-  state.stepTrack.index = index;
-  return index;
-}
-
 // Шаг может прийти строкой или объектом — формат в контракте не зафиксирован
 function stepText(step) {
   if (typeof step === "string") return step;
   return step?.text || step?.title || "";
 }
 
-// summary / escalation — ВРЕМЕННАЯ заглушка. Этап 2: карточка из 4 блоков + оценка (4.6)
+// summary / escalation — ВРЕМЕННАЯ версия. Этап 2: карточка из 4 блоков (4.6).
+// Исход определяется только данными бэкенда:
+//   resolved    — state RESOLVED                      → [Новое обращение]
+//   transferred — state ESCALATED (уже у специалиста) → [Завершить обращение]
+//   unsolved    — рекомендации не помогли, специалист ещё не подключён
+//                 → [Завершить обращение] [Обратиться к специалисту]
 function renderCard(data) {
   const { reply } = data;
   const card = data.ticket_card || {};
-  const msg = addBotMessage(reply.text);
+  const ticketId = card.ticket_id || data.ticket_id;
+  const outcome = cardOutcome(data);
 
+  const fallbackText = {
+    resolved: "Проблема решена.",
+    transferred: "Обращение передано специалисту.",
+    unsolved: "К сожалению, рекомендации не помогли.",
+  };
+  const msg = addBotMessage(reply.text || fallbackText[outcome]);
+
+  const resultEl = el("p", null, `Результат: ${resultText(data, outcome)}`);
   const draft = el("div", "card-draft");
   draft.append(
-    el("p", null, `Обращение №${card.ticket_id || data.ticket_id || "—"}, ${card.category || data.category || "без категории"}`),
+    el("p", null, `Обращение №${ticketId || "—"}, ${card.category || data.category || "без категории"}`),
     el("p", null, `Проблема: ${card.problem_summary || "—"}`),
-    el("p", null, card.resolved_by_bot ? "Результат: ✓ решено без специалиста" : "Результат: передано специалисту")
+    resultEl
   );
-  msg.body.append(draft);
+  msg.body.append(draft, renderRating(ticketId));
 
-  const actions = el("div", "msg-actions");
-  const newBtn = el("button", "btn btn--ghost", "Новое обращение");
-  newBtn.type = "button";
-  newBtn.addEventListener("click", resetConversation);
-  actions.append(newBtn);
-  msg.body.append(actions);
+  const actions = el("div", "msg-actions card-actions");
+  const status = el("p", "card-status");
+  status.setAttribute("role", "status");
 
+  if (outcome === "resolved") {
+    actions.append(button("btn btn--ghost", "Новое обращение", resetConversation));
+  } else {
+    actions.append(button("btn btn--ghost", "Завершить обращение", resetConversation));
+  }
+
+  if (outcome === "unsolved") {
+    const escBtn = button("btn btn--primary", "Обратиться к специалисту", async () => {
+      if (escBtn.disabled) return; // двойное нажатие
+      escBtn.disabled = true;
+      status.textContent = "";
+      try {
+        await escalateTicket(ticketId);
+        escBtn.remove();
+        resultEl.textContent = "Результат: передано специалисту";
+        status.textContent = "Обращение передано специалисту — он увидит всё, что вы уже попробовали, и свяжется с вами.";
+      } catch (e) {
+        escBtn.disabled = false;
+        status.textContent = e.status === 429 ? ERROR_TEXT[429] : "Не удалось передать обращение. Попробуйте ещё раз.";
+      }
+    });
+    actions.append(escBtn);
+  }
+
+  msg.body.append(actions, status);
   scrollToMessage(msg.row);
+}
+
+function cardOutcome(data) {
+  const card = data.ticket_card || {};
+  if (data.state === "RESOLVED") return "resolved";
+  if (data.state === "ESCALATED") return "transferred";
+  if (data.reply?.type === "summary" && card.needs_specialist !== true) return "resolved";
+  return "unsolved";
+}
+
+// Оценка ответа: 👍 = 5, 👎 = 1 (API принимает 1..5)
+function renderRating(ticketId) {
+  const wrap = el("div", "rating");
+  const label = el("p", "rating-label", "Помог ли ответ?");
+  const buttons = el("div", "msg-actions");
+  const status = el("p", "rating-status");
+  status.setAttribute("role", "status");
+
+  const options = [
+    { text: "👍 Помогло", rating: 5 },
+    { text: "👎 Не помогло", rating: 1 },
+  ];
+  const btns = options.map(({ text, rating }) => {
+    const btn = el("button", "btn btn--ghost", text);
+    btn.type = "button";
+    btn.addEventListener("click", async () => {
+      if (wrap.dataset.sending) return; // двойное нажатие
+      wrap.dataset.sending = "1";
+      btns.forEach((b) => (b.disabled = true));
+      status.textContent = "";
+      try {
+        await rateTicket(ticketId, rating);
+        label.remove();
+        buttons.remove();
+        status.textContent = "Спасибо за оценку!";
+      } catch (e) {
+        delete wrap.dataset.sending;
+        btns.forEach((b) => (b.disabled = false));
+        status.textContent = e.status === 429 ? ERROR_TEXT[429] : "Оценка не отправилась. Попробуйте ещё раз.";
+      }
+    });
+    return btn;
+  });
+
+  buttons.append(...btns);
+  wrap.append(label, buttons, status);
+  return wrap;
+}
+
+// POST /api/tickets/{id}/escalate — передать специалисту, тоже с token
+function escalateTicket(ticketId) {
+  return apiPost(`/api/tickets/${encodeURIComponent(ticketId)}/escalate`, { token: state.token });
+}
+
+// POST /api/tickets/{id}/rate — теперь обязательно с token из ответа /api/chat
+function rateTicket(ticketId, rating) {
+  return apiPost(`/api/tickets/${encodeURIComponent(ticketId)}/rate`, {
+    rating,
+    token: state.token,
+  });
+}
+
+// Строка «Результат» в карточке. «Без специалиста» — только если бэкенд
+// явно поставил resolved_by_bot = true.
+function resultText(data, outcome) {
+  if (outcome === "transferred") return "передано специалисту";
+  if (outcome === "unsolved") return "не решено — рекомендации не помогли";
+  return data.ticket_card?.resolved_by_bot === true ? "✓ решено без специалиста" : "✓ решено";
 }
 
 // reply.type === "error" — бэкенд ответил, но обработать не смог
@@ -487,16 +641,44 @@ function retireActiveControls() {
   });
 }
 
+// «На главную», «Завершить обращение», «Новое обращение».
+// Можно нажать и во время запроса: ответ старого диалога просто отбросится.
 function resetConversation() {
-  if (state.busy) return;
+  state.conv++;
+  if (state.busy) {
+    hideTyping();
+    setBusy(false);
+  }
   state.ticketId = null;
   state.token = null;
-  state.stepTrack = { key: null, index: -1 };
   // Этап 4: очистить сохранённое обращение в localStorage
 
   feedEl.replaceChildren();
-  emptyEl.hidden = false;
+  setMode("home");
   chatEl.scrollTo({ top: 0 });
+  if (window.matchMedia("(hover: hover)").matches) inputEl.focus();
+}
+
+// Главный экран: поле ввода по центру над частыми проблемами.
+// Диалог: то же самое поле переезжает в нижнюю панель.
+function setMode(mode) {
+  const home = mode === "home";
+  if (emptyEl.hidden === !home) return; // уже в нужном режиме
+  const hadFocus = composerEl.contains(document.activeElement);
+  emptyEl.hidden = !home;
+  dockEl.hidden = home;
+  backBtn.hidden = home;
+  (home ? heroSlotEl : dockEl).append(composerEl);
+  if (hadFocus) inputEl.focus({ preventScroll: true }); // перенос в DOM сбрасывает фокус
+}
+
+// «Другая проблема»: темы заново не предлагаем и ничего не отправляем.
+// Просим описать своими словами — описание уйдёт на сервер первым сообщением.
+function startOtherProblem() {
+  if (state.busy) return;
+  setMode("chat");
+  const msg = addBotMessage("Опишите свою проблему, и мы попытаемся её решить.");
+  scrollToMessage(msg.row);
   inputEl.focus();
 }
 
@@ -580,6 +762,13 @@ function focusIfLost(node) {
   }
 }
 
+function button(className, text, onClick) {
+  const btn = el("button", className, text);
+  btn.type = "button";
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -611,11 +800,16 @@ function sleep(ms) {
    МОКИ
    --------------------------------------------------------------------------
    Сценарии по первому сообщению:
-     «Wi-Fi», «VPN»  — вопрос с кнопками → шаги → итоговая карточка
-                       («Не получилось» на последнем шаге → эскалация)
-     «принтер»       — вопрос → шаги (короткий сценарий, 3 шага)
-     «пароль»        — сразу эскалация
-     любой другой    — choice с вариантами категорий
+     «Wi-Fi», «VPN»     — вопрос → шаги из базы (source: "kb") одним ответом
+                          «Всё получилось» на любом шаге → "Получилось" → итог «решено»
+                          все шаги не помогли → "Не получилось" → общие рекомендации ИИ
+                          (source: "general", плашка, кнопка «Позвать специалиста»)
+                          общие тоже не помогли → «не решено»: [Завершить] [Обратиться к специалисту]
+                          Переходы между шагами на сервер не ходят.
+     «принтер»          — вопрос → 3 шага
+     «интернет», «сеть» — choice: Wi-Fi или VPN
+     «пароль»           — сразу передано специалисту (state ESCALATED)
+     любой другой текст — сразу общие рекомендации (source: "general")
    Отладочные команды (ввести в поле):
      /error   — reply.type = "error"
      /429     — HTTP 429
@@ -650,7 +844,7 @@ const MOCK_SCENARIOS = {
     slot: "vpn_error",
     steps: [
       "Проверьте интернет без VPN — откройте любой сайт",
-      "Закройте VPN-клиент в трее и запустите его снова",
+      "Закройте VPN-клиент в области уведомлений (возле часов) и запустите его снова",
       "Проверьте, что дата и время на компьютере выставляются автоматически",
       "Удалите профиль подключения и загрузите его заново с корпоративного портала",
     ],
@@ -670,6 +864,14 @@ const MOCK_SCENARIOS = {
   },
 };
 
+// Общие рекомендации «от ИИ» — не из базы знаний
+const MOCK_GENERAL_STEPS = [
+  "Перезагрузите компьютер — это устраняет большую часть временных сбоев",
+  "Проверьте, что установлены последние обновления системы и нужной программы",
+  "Попробуйте то же действие на другом компьютере или под другой учётной записью",
+];
+const MOCK_CALL_SPECIALIST = "Позвать специалиста";
+
 const LONG_TEXT = Array.from(
   { length: 30 },
   (_, i) => `${i + 1}. Длинный абзац для проверки прокрутки: лента должна остановиться на начале ответа, а не на его конце.`
@@ -677,7 +879,7 @@ const LONG_TEXT = Array.from(
 
 const mock = {
   ticketId: null, token: null, scenario: null, phase: null,
-  step: 0, slots: {}, stepsDone: [], problem: "", actions: 0,
+  slots: {}, stepsDone: [], problem: "", actions: 0,
   failed: new Set(), // request_id, на которых уже «упали»
 };
 
@@ -694,13 +896,18 @@ async function mockResponse(path, body) {
     throw cmd === "/429" ? new ApiError(429) : new ApiError(0, "network");
   }
   if (cmd === "/404") throw new ApiError(404);
-  if (path.includes("/rate")) return { ok: true };
+  if (path.includes("/rate") || path.includes("/escalate")) {
+    // Как на реальном API: без правильного token не принимаем
+    if (!body.token || body.token !== mock.token) throw new ApiError(422);
+    if (path.includes("/escalate")) mock.phase = "closed";
+    return { ok: true };
+  }
 
   if (!body.ticket_id) {
     // Новое обращение
     Object.assign(mock, {
       ticketId: "t_" + randomHex(2), token: "s_" + randomHex(8),
-      scenario: null, phase: "start", step: 0, slots: {}, stepsDone: [],
+      scenario: null, phase: "start", slots: {}, stepsDone: [],
       problem: text, actions: 0,
     });
   } else if (body.ticket_id !== mock.ticketId) {
@@ -716,6 +923,9 @@ async function mockResponse(path, body) {
   }
 
   const answer = body.quick_reply || text;
+  if (body.quick_reply === MOCK_CALL_SPECIALIST && mock.phase !== "closed") {
+    return mockTransfer("Обращение передано специалисту. Он увидит всё, что вы уже попробовали, и свяжется с вами.");
+  }
   switch (mock.phase) {
     case "start":
     case "choice":
@@ -724,11 +934,12 @@ async function mockResponse(path, body) {
       const sc = MOCK_SCENARIOS[mock.scenario];
       mock.slots[sc.slot] = answer;
       mock.phase = "steps";
-      mock.step = 0;
-      return mockSteps("Попробуем решить по шагам. Отмечайте, что получилось.");
+      return mockSteps("Попробуем решить по шагам. Если на каком-то шаге всё заработает — сразу отметьте это.");
     }
     case "steps":
-      return mockStepAnswer(body.quick_reply);
+      return mockStepsResult(body.quick_reply);
+    case "general":
+      return mockGeneralResult(body.quick_reply);
     default:
       throw new ApiError(409); // обращение уже закрыто
   }
@@ -748,61 +959,79 @@ function mockClassify(text) {
     return mockReply("CLARIFYING", { type: "question", text: sc.question, quick_replies: sc.options });
   }
 
-  if (/парол|другое/.test(t)) {
-    return mockEscalation(
+  // Неоднозначно: «интернет» бывает и Wi-Fi, и VPN — уточняем только между ними
+  if (/интернет|сеть|сети/.test(t)) {
+    mock.phase = "choice";
+    return mockReply(
+      "CLASSIFYING",
+      { type: "choice", text: "Уточните, пожалуйста: с каким подключением проблема?", quick_replies: ["Корпоративный Wi-Fi", "VPN из дома"] },
+      { category: null, confidence: 0.48 }
+    );
+  }
+
+  if (/парол/.test(t)) {
+    return mockTransfer(
       "Сброс пароля делает специалист — это требование безопасности. Обращение передано, с вами свяжутся в течение 15 минут.",
       { category: "Учётная запись", confidence: 0.55, article: { id: "KB-ACC-010", title: "Сброс пароля" } }
     );
   }
 
-  mock.phase = "choice";
-  return mockReply(
-    "CLASSIFYING",
-    { type: "choice", text: "Уточните, пожалуйста, о чём речь:", quick_replies: ["Wi-Fi", "VPN", "Принтер", "Другое"] },
-    { category: null, confidence: 0.42 }
-  );
+  // В базе знаний ничего нет — сразу общие рекомендации
+  return mockGeneral("Готового решения в базе знаний нет. Вот общие рекомендации — если не помогут, позовите специалиста.");
 }
 
 function mockSteps(intro = "") {
   const sc = MOCK_SCENARIOS[mock.scenario];
-  return mockReply("SOLVING", { type: "steps", text: intro, steps: sc.steps, step_index: mock.step });
+  return mockReply("SOLVING", { type: "steps", text: intro, steps: sc.steps });
 }
 
-function mockStepAnswer(quickReply) {
+// Сервер узнаёт только итог гида — одно сообщение вместо запроса на каждый шаг
+function mockStepsResult(quickReply) {
   const sc = MOCK_SCENARIOS[mock.scenario];
-  const current = sc.steps[mock.step];
-  const isLast = mock.step >= sc.steps.length - 1;
+  if (quickReply === QR.SOLVED) return mockSummary();
+  if (quickReply === QR.NOT_SOLVED) {
+    mock.stepsDone = [...sc.steps];
+    return mockGeneral("Вот общие рекомендации. Если не помогут — позовите специалиста.");
+  }
+  return mockSteps("Давайте пройдём шаги по порядку — отмечайте результат кнопками.");
+}
 
-  if (quickReply === QR.RESOLVED || (quickReply === QR.STEP_OK && isLast)) {
-    mock.stepsDone.push(current);
-    return mockSummary();
+function mockGeneral(intro) {
+  const sc = MOCK_SCENARIOS[mock.scenario];
+  mock.phase = "general";
+  return mockReply(
+    "SOLVING",
+    { type: "steps", source: "general", text: intro, steps: MOCK_GENERAL_STEPS, quick_replies: [MOCK_CALL_SPECIALIST] },
+    { category: sc?.category ?? "Другое", confidence: sc ? sc.confidence : 0.3, article: null }
+  );
+}
+
+function mockGeneralResult(quickReply) {
+  if (quickReply === QR.SOLVED) return mockSummary();
+  if (quickReply === QR.NOT_SOLVED) {
+    mock.stepsDone.push(...MOCK_GENERAL_STEPS);
+    mock.phase = "unsolved";
+    // Не решено, но специалист ещё не подключён: state не ESCALATED
+    return mockReply(
+      "VERIFYING",
+      { type: "escalation", text: "К сожалению, рекомендации не помогли. Вы можете обратиться к специалисту — он увидит всё, что вы уже попробовали." },
+      { ticket_card: mockCard(false), article: null }
+    );
   }
-  if (quickReply === QR.STEP_OK) {
-    mock.stepsDone.push(current);
-    mock.step++;
-    return mockSteps();
-  }
-  if (quickReply === QR.NOT_HELPED) {
-    if (isLast) {
-      return mockEscalation("Шаги не помогли — передаю обращение специалисту. Он увидит, на каком шаге возникла проблема.");
-    }
-    mock.step++;
-    return mockSteps("Понял. Тогда попробуем так:");
-  }
-  // Пользователь написал текст вместо кнопки
-  return mockSteps("Давайте сначала закончим текущий шаг — отметьте результат кнопкой.");
+  return mockGeneral("Давайте пройдём рекомендации по порядку — отмечайте результат кнопками.");
 }
 
 function mockSummary() {
   mock.phase = "closed";
   return mockReply(
     "RESOLVED",
-    { type: "summary", text: "Отлично, проблема решена! Вот итог обращения." },
+    { type: "summary", text: "Проблема решена. Если она повторится — начните новое обращение." },
     { ticket_card: mockCard(true) }
   );
 }
 
-function mockEscalation(text, override = {}) {
+// Обращение уже у специалиста
+function mockTransfer(text, override = {}) {
   mock.phase = "closed";
   return mockReply("ESCALATED", { type: "escalation", text }, { ...override, ticket_card: mockCard(false, override) });
 }
@@ -831,7 +1060,7 @@ function mockReply(stateName, reply, extra = {}) {
     category: sc?.category ?? null,
     confidence: sc?.confidence ?? null,
     article: sc?.article ?? null,
-    reply: { text: "", quick_replies: [], steps: [], ...reply },
+    reply: { text: "", quick_replies: [], steps: [], source: "kb", ...reply },
     ticket_card: null,
     user_actions_count: mock.actions,
     ...extra,
