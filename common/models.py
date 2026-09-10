@@ -83,7 +83,9 @@ class ChatRequest(BaseModel):
     ticket_id: Optional[str] = None       # None = новое обращение
     token: Optional[str] = None           # секрет обращения, выдан при создании
     request_id: str                       # UUID, для идемпотентности
-    message: str = Field(default="", max_length=2000)
+    # Optional, а не str: при нажатии кнопки клиент присылает message: null,
+    # и отвергать такой запрос было бы придиркой к форме, а не к содержанию.
+    message: Optional[str] = Field(default="", max_length=2000)
     quick_reply: Optional[str] = None     # если пользователь нажал кнопку
 
 
