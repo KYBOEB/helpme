@@ -110,3 +110,31 @@ def stats() -> dict:
         }
     finally:
         db.close()
+
+# ---------------------------------------------------------------- база знаний
+
+@router.get("/kb/search")
+def kb_search(q: str = "", limit: int = 10) -> list[dict]:
+    """Поиск по базе знаний. Используется вкладкой «База знаний» в панели."""
+    from core import dialog  # импорт здесь, чтобы не тянуть модель при старте роутера
+
+    if len(q) > 500:
+        raise HTTPException(status_code=422, detail="Слишком длинный запрос")
+
+    limit = max(1, min(limit, 50))
+
+    if not q.strip():
+        articles = [(a, 0.0) for a in dialog._articles[:limit]]
+    else:
+        articles = dialog._retriever.search(q, top_k=limit)
+
+    return [{
+        "id": a.id,
+        "category": a.category,
+        "title": a.title,
+        "score": round(score, 3),
+        "symptoms": a.symptoms,
+        "steps": a.steps,
+        "required_slots": [s.key for s in a.required_slots if not s.optional],
+        "has_solution": bool(a.steps),
+    } for a, score in articles]
