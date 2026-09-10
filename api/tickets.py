@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -121,6 +122,18 @@ def stats() -> dict:
         solved = [t for t in finished if t.resolved_by_bot]
         rated = [t.rating for t in tickets if t.rating]
         actions = [t.user_actions_count for t in solved]
+
+        # среднее время от создания обращения до первого шага решения
+        from db.models import Event
+        first_step: list[float] = []
+        created = {e.ticket_id: e.created_at for e in
+                   db.query(Event).filter(Event.type == "created").all()}
+        for e in db.query(Event).filter(Event.type.in_(("solved", "assisted"))).all():
+            start = created.get(e.ticket_id)
+            if start:
+                first_step.append((e.created_at - start).total_seconds() * 1000)
+
+        accuracy_env = os.getenv("CLASSIFICATION_ACCURACY", "").strip()
         return {
             "total": len(tickets),
             "finished": len(finished),
@@ -133,6 +146,13 @@ def stats() -> dict:
             "by_category": dict(Counter(t.category for t in tickets if t.category)),
             "avg_rating": round(sum(rated) / len(rated), 2) if rated else None,
             "ratings_count": len(rated),
+            # дублируем под именами, которые использует панель
+            "total_count": len(tickets),
+            "resolved_by_bot_count": len(solved),
+            "rating_count": len(rated),
+            "avg_time_to_first_step_ms": round(sum(first_step) / len(first_step))
+                                          if first_step else None,
+            "classification_accuracy": float(accuracy_env) if accuracy_env else None,
         }
     finally:
         db.close()
@@ -198,3 +218,20 @@ def kb_gaps(limit: int = 100) -> list[dict]:
         return out
     finally:
         db.close()
+
+
+@router.post("/kb/articles", dependencies=[Depends(require_operator)])
+def create_article(payload: dict = Body(...)) -> dict:
+    """Добавить карточку в базу знаний прямо из панели оператора.
+
+    Карточка сразу попадает в поиск — перезапуск не нужен.
+    """
+    from core import dialog, kb_store
+
+    try:
+        article = kb_store.add_article(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    total = dialog.reload_kb()
+    return {"ok": True, "id": article.id, "articles_total": total}

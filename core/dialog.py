@@ -24,7 +24,7 @@ from core import security
 from core.redact import redact
 from db import repo
 from db.models import Ticket
-from kb.loader import load_articles
+from core import kb_store
 from kb.retriever import HybridRetriever
 from core import assist, demo_cache
 from llm import answerer, router
@@ -32,9 +32,21 @@ from llm import answerer, router
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
 MAX_CLARIFYING_QUESTIONS = int(os.getenv("MAX_CLARIFYING_QUESTIONS", "2"))
 
-_articles = load_articles()
-_retriever = HybridRetriever(_articles)
-_by_id = {a.id: a for a in _articles}
+_articles: list[Article] = []
+_retriever: HybridRetriever | None = None
+_by_id: dict[str, Article] = {}
+
+
+def reload_kb() -> int:
+    """Перечитать базу знаний. Вызывается на старте и после правок из панели."""
+    global _articles, _retriever, _by_id
+    _articles = kb_store.all_articles()
+    _retriever = HybridRetriever(_articles)
+    _by_id = {a.id: a for a in _articles}
+    return len(_articles)
+
+
+reload_kb()
 
 
 # ---------------------------------------------------------------- вспомогательное
@@ -88,7 +100,7 @@ def _notify_external(db: Session, ticket: Ticket) -> None:
     """Отправить карточку во внешнюю систему. Интеграция не имеет права
     уронить основной сценарий, поэтому любая ошибка только логируется."""
     try:
-        from api.export import send_webhook  # функция участника E
+        from api.export import send_webhook
     except ImportError:
         return
     try:
