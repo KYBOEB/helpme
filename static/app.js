@@ -41,15 +41,26 @@ const ERROR_TEXT = {
   default: "Что-то пошло не так. Повторите запрос.",
 };
 
-// Аватар помощника — буква «А» (Актион). Без внешних файлов и шрифтов:
-// одна буква читается на любом экране лучше, чем мелкая иконка.
-const ICON_BOT = `<span class="avatar-letter">А</span>`;
+// Аватары — одна буква вместо иконки: на любом экране читается лучше мелкой графики.
+// Буква нарисована в SVG, а не текстом в блоке: text-anchor и dominant-baseline
+// центрируют её по геометрии глифа, а не по строке, поэтому она стоит ровно
+// в середине кружка при любом системном шрифте.
+function avatarLetter(letter) {
+  return `<svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">`
+       + `<text x="16" y="16" text-anchor="middle" dominant-baseline="middle"`
+       + ` font-size="16" font-weight="600" fill="currentColor">${letter}</text></svg>`;
+}
 
-// Аватар живого специалиста, чтобы его реплики не путались с ответами бота
-const ICON_OPERATOR = `<span class="avatar-letter">С</span>`;
+const ICON_BOT = avatarLetter("а");        // «а» — Актион
+const ICON_OPERATOR = avatarLetter("с");   // «с» — специалист
 
 // Опрос новых реплик специалиста, пока обращение у человека
 const POLL_INTERVAL_MS = 6000;
+
+// Незавершённое обращение переживает перезагрузку страницы.
+// Храним только номер и токен — переписка остаётся на сервере.
+const STORE_KEY = "helpme:ticket";
+const STORE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ---------- Состояние ----------
 
@@ -65,7 +76,7 @@ const state = {
 // ---------- DOM ----------
 
 let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl;
-let composerEl, heroSlotEl, dockEl, backBtn;
+let composerEl, heroSlotEl, dockEl, backBtn, resumeEl;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 document.addEventListener("DOMContentLoaded", init);
@@ -81,6 +92,7 @@ function init() {
   heroSlotEl = document.getElementById("hero-slot");
   dockEl = document.getElementById("dock");
   backBtn = document.getElementById("back-btn");
+  resumeEl = document.getElementById("resume");
 
   // Режим моков виден только разработчику: во вкладке браузера и в консоли
   if (MOCK) {
@@ -105,7 +117,12 @@ function init() {
   // «На главную»: просто уходим из диалога, ничего не отправляя
   backBtn.addEventListener("click", resetConversation);
 
-  // Этап 4: проверить localStorage и показать полосу незавершённого обращения
+  document.getElementById("resume-continue").addEventListener("click", resumeTicket);
+  document.getElementById("resume-new").addEventListener("click", () => {
+    clearSaved();
+    hideResume();
+  });
+  offerResume();
 
   updateComposer();
   // На телефоне не открываем клавиатуру сами
@@ -130,6 +147,7 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
   if (!quickReply && !text) return;               // пустое не отправляем
 
   setMode("chat");                                // поле ввода уезжает вниз
+  hideResume();                                   // начался новый диалог
   retireActiveControls();                         // старые кнопки больше не актуальны
   if (echo) addUserMessage(echo);
 
@@ -166,7 +184,7 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
 
   if (data.ticket_id) state.ticketId = data.ticket_id;
   if (data.token) state.token = data.token;
-  // Этап 4: сохранить ticket_id и token в localStorage (в try/catch)
+  saveTicket(data);
 
   try {
     if (afterReply) afterReply(data);
@@ -554,6 +572,102 @@ function rateTicket(ticketId, rating) {
 }
 
 /* ==========================================================================
+   НЕЗАВЕРШЁННОЕ ОБРАЩЕНИЕ
+   Перезагрузка страницы больше не теряет диалог: номер и токен лежат
+   в браузере, переписка — на сервере. Любое обращение к localStorage
+   обёрнуто в try/catch: в приватном окне он может быть недоступен.
+   ========================================================================== */
+
+function saveTicket(data) {
+  if (!state.ticketId || !state.token) return;
+  // Закрытое обращение восстанавливать нечего и незачем
+  if (data && (data.state === "RESOLVED" || data.reply?.type === "closed")) {
+    return clearSaved();
+  }
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      ticketId: state.ticketId, token: state.token, savedAt: Date.now(),
+    }));
+  } catch { /* приватное окно или переполнение — работаем без сохранения */ }
+}
+
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved?.ticketId || !saved?.token) return null;
+    if (Date.now() - (saved.savedAt || 0) > STORE_TTL_MS) return null;
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+function clearSaved() {
+  try { localStorage.removeItem(STORE_KEY); } catch { /* не критично */ }
+}
+
+function offerResume() {
+  if (MOCK || !loadSaved()) return;
+  resumeEl.hidden = false;
+}
+
+function hideResume() {
+  if (resumeEl) resumeEl.hidden = true;
+}
+
+async function resumeTicket() {
+  const saved = loadSaved();
+  if (!saved) return hideResume();
+  hideResume();
+
+  let data;
+  try {
+    data = await apiPost("/api/chat/updates", {
+      ticket_id: saved.ticketId, token: saved.token, after: 0, full: true,
+    });
+  } catch (e) {
+    // 404 — обращение удалено или токен больше не подходит: забываем о нём
+    clearSaved();
+    showError(e.status === 404
+      ? "Прошлое обращение больше недоступно. Начните новое."
+      : ERROR_TEXT.network);
+    return;
+  }
+
+  state.ticketId = saved.ticketId;
+  state.token = saved.token;
+  state.lastMsgId = data.last_id || 0;
+
+  setMode("chat");
+  feedEl.replaceChildren();
+  for (const m of data.messages || []) {
+    if (m.role === "user") addUserMessage(m.text);
+    else if (m.role === "operator") addOperatorMessage(m.text);
+    else addBotMessage(m.text);
+  }
+
+  const note = addBotMessage(`Обращение №${saved.ticketId} восстановлено. `
+    + `Продолжайте — контекст я помню.`);
+
+  scrollToMessage(note.row);
+
+  // Шаги в переписке не хранятся — сервер отдаёт их отдельным полем.
+  // Возвращаем полноценный пошаговый гид, а не список текстом: пользователь
+  // продолжит ровно с теми же кнопками, что были до перезагрузки.
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+  if (data.state === "VERIFYING" && steps.length) {
+    renderSteps({ reply: { type: "steps", text: "", steps,
+                           source: data.assist_used ? "general" : "kb" } });
+  } else if (data.state === "VERIFYING") {
+    renderQuickReplies(note.body, [QR.SOLVED, QR.NOT_SOLVED]);
+  }
+
+  if (data.state === "ESCALATED") startPolling();
+}
+
+/* ==========================================================================
    ЖИВОЙ СПЕЦИАЛИСТ
    Обращение передано человеку. Бот в переписку не вмешивается: страница
    раз в несколько секунд спрашивает сервер, не написал ли специалист.
@@ -646,6 +760,7 @@ function renderRequestError(err, payload) {
   const text = ERROR_TEXT[status] || ERROR_TEXT[code] || ERROR_TEXT.default;
 
   if (status === 404 || status === 409) {
+    clearSaved();   // обращения больше нет — восстанавливать будет нечего
     showError(text, { label: "Новое обращение", onClick: resetConversation });
   } else if (status === 422) {
     showError(text, null); // повтор того же текста не поможет
@@ -757,7 +872,8 @@ function resetConversation() {
   state.ticketId = null;
   state.token = null;
   state.lastMsgId = 0;
-  // Этап 4: очистить сохранённое обращение в localStorage
+  clearSaved();
+  hideResume();
 
   feedEl.replaceChildren();
   setMode("home");

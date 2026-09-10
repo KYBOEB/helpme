@@ -20,7 +20,8 @@ const state = {
   filtered: [],
   activeTicketId: null,
   activeTab: "tickets",
-  drawerTimer: null,   // автообновление открытой карточки
+  drawerTimer: null,      // автообновление открытой карточки
+  queueSignature: null,   // состав очереди на прошлом опросе
 };
 
 /* ---------- Сеть ---------- */
@@ -196,6 +197,33 @@ function renderTickets() {
 
 /* ---------- Вкладка «Очередь» ---------- */
 
+/* Очередь опрашивается сама: специалист не должен щёлкать по вкладкам,
+   чтобы узнать, что заявка пришла. Список перерисовывается, только если
+   его состав изменился — иначе кнопка «Взять в работу» убегала бы
+   из-под курсора каждые десять секунд. */
+const QUEUE_REFRESH_MS = 10000;
+
+function queueSignature(items) {
+  return items.map((t) => t.ticket_id).join(",");
+}
+
+async function refreshQueueBadge() {
+  let items;
+  try {
+    items = await apiGet(API.queue);
+  } catch {
+    return;                       // сеть моргнула, попробуем на следующем тике
+  }
+  document.getElementById("queue-count").textContent = String(items.length);
+  const sig = queueSignature(items);
+  if (sig === state.queueSignature) return;
+  state.queueSignature = sig;
+  if (state.activeTab === "queue") renderQueue(items);
+}
+
+setInterval(refreshQueueBadge, QUEUE_REFRESH_MS);
+document.addEventListener("DOMContentLoaded", refreshQueueBadge);
+
 async function loadQueue() {
   const box = document.getElementById("queue-list");
   box.innerHTML = '<p class="muted">Загрузка…</p>';
@@ -206,7 +234,12 @@ async function loadQueue() {
     box.innerHTML = '<p class="muted">Не удалось загрузить очередь</p>';
     return;
   }
+  state.queueSignature = queueSignature(items);
+  renderQueue(items);
+}
 
+function renderQueue(items) {
+  const box = document.getElementById("queue-list");
   document.getElementById("queue-count").textContent = String(items.length);
   box.innerHTML = "";
 
@@ -235,6 +268,7 @@ async function loadQueue() {
         card.remove();
         const left = document.querySelectorAll("#queue-list .queue-item").length;
         document.getElementById("queue-count").textContent = String(left);
+        state.queueSignature = null;   // состав очереди изменился нами
         if (!left) loadQueue();
       } catch {
         btn.disabled = false;

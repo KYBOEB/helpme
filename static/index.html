@@ -26,7 +26,15 @@
       </div>
     </header>
 
-    <!-- Этап 4: здесь появится полоса «У вас есть незавершённое обращение» (4.7) -->
+    <!-- Полоса восстановления: показывается, если в браузере осталось
+         незавершённое обращение. Скрыта, пока app.js её не покажет. -->
+    <div id="resume" class="resume" hidden>
+      <p class="resume-text">У вас есть незавершённое обращение</p>
+      <div class="resume-actions">
+        <button id="resume-continue" class="btn btn--primary" type="button">Продолжить</button>
+        <button id="resume-new" class="btn btn--ghost" type="button">Начать новое</button>
+      </div>
+    </div>
 
     <!-- Прокручиваемая область -->
     <main id="chat" class="chat">

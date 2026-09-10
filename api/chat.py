@@ -1,6 +1,7 @@
 """POST /api/chat — единственный эндпоинт диалога. ВЛАДЕЛЕЦ: A."""
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Body, Request
@@ -54,6 +55,11 @@ def chat_updates(payload: dict = Body(...)) -> dict:
         after = max(0, int(after))
     except (TypeError, ValueError):
         after = 0
+    # full=true — вся переписка целиком: нужна, когда страница восстанавливает
+    # незавершённое обращение после перезагрузки. Обычный опрос берёт только
+    # реплики специалиста, чтобы не гонять историю каждые шесть секунд.
+    roles = (("user", "assistant", "operator") if payload.get("full")
+             else ("operator",))
 
     db = repo.get_session()
     try:
@@ -63,12 +69,23 @@ def chat_updates(payload: dict = Body(...)) -> dict:
         # в минуту, и он не должен съедать бюджет обычных сообщений.
         security.rate_limit(f"poll:{ticket_id}", max_requests=90)
 
-        messages = repo.messages_after(db, ticket_id, after)
+        messages = repo.messages_after(db, ticket_id, after, roles=roles, limit=200)
+        # Выданные шаги в переписке не лежат — она хранит только текст реплик.
+        # Для восстановления диалога их надо отдать отдельно, иначе пользователь
+        # увидит вступление «давайте по шагам» и ни одного шага.
+        steps: list = []
+        if payload.get("full"):
+            try:
+                steps = json.loads(ticket.steps_json or "[]")
+            except ValueError:
+                steps = []
         return {
             "ticket_id": ticket_id,
             "state": ticket.state,
             "operator_taken": bool(ticket.operator_taken),
-            "messages": [{"id": m["id"], "text": m["content"],
+            "steps": steps,
+            "assist_used": bool(ticket.assist_used),
+            "messages": [{"id": m["id"], "role": m["role"], "text": m["content"],
                           "created_at": m["created_at"]} for m in messages],
             "last_id": messages[-1]["id"] if messages
                        else repo.last_message_id(db, ticket_id),

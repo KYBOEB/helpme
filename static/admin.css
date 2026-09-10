@@ -500,6 +500,13 @@
   .admin-body .filters label { flex: 1 1 100%; }
   .admin-body .analytics-grid { grid-template-columns: 1fr; }
   .admin-body .kb-results { grid-template-columns: 1fr; }
+  /* Четыре вкладки в один ряд на телефон не помещаются и растягивали
+     страницу вбок — переносим их на вторую строку. */
+  .admin-tabs { flex-wrap: wrap; }
+  .admin-body .tab { padding: 0.5rem 0.75rem; font-size: 0.875rem; }
+  /* Таблица прокручивается внутри своей рамки, а не тащит за собой страницу */
+  .admin-body .table-wrap { max-width: 100%; }
+  .admin-body .drawer { width: 100vw; }
 }
 
 /* ---------- Добавлено вместе с вкладкой очереди ---------- */
