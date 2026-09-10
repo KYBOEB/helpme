@@ -26,6 +26,7 @@ from db import repo
 from db.models import Ticket
 from kb.loader import load_articles
 from kb.retriever import HybridRetriever
+from core import demo_cache
 from llm import answerer, router
 
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
@@ -83,6 +84,20 @@ def _respond(db: Session, ticket: Ticket, reply: Reply,
 
 # ---------------------------------------------------------------- шаги автомата
 
+def _notify_external(db: Session, ticket: Ticket) -> None:
+    """Отправить карточку во внешнюю систему. Интеграция не имеет права
+    уронить основной сценарий, поэтому любая ошибка только логируется."""
+    try:
+        from api.export import send_webhook  # функция участника E
+    except ImportError:
+        return
+    try:
+        send_webhook(_card(db, ticket))
+        repo.log_event(db, ticket.id, "webhook_sent")
+    except Exception as exc:  # noqa: BLE001
+        repo.log_event(db, ticket.id, "webhook_failed", {"error": str(exc)[:200]})
+
+
 def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
     ticket.state = "ESCALATED"
     ticket.needs_specialist = True
@@ -102,6 +117,8 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
         "пользователь запросил специалиста":
             "Передаю обращение живому специалисту.",
     }.get(reason, "Передаю обращение специалисту.")
+
+    _notify_external(db, ticket)
 
     text = (f"{intro} Я передал обращение специалисту поддержки, "
             f"номер — {ticket.id}. Категорию, ваши ответы и выполненные шаги "
@@ -128,7 +145,7 @@ def _solve(db: Session, ticket: Ticket) -> ChatResponse:
     if found:
         repo.log_event(db, ticket.id, "redacted", found)
 
-    answer = answerer.make_answer(art, safe_slots, safe_last)
+    answer = demo_cache.cached_answer(art, safe_slots, safe_last)
     steps = answer.steps or art.steps
     # Страховка: модель не имеет права добавлять шаги, которых нет в статье
     if len(steps) > len(art.steps):
@@ -174,7 +191,7 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
                  for m in repo.history(db, ticket.id)]
     safe_known = {k: redact(v)[0] for k, v in known.items()}
 
-    result = router.route(safe_text, safe_hist, candidates, safe_known)
+    result = demo_cache.cached_route(safe_text, safe_hist, candidates, safe_known)
 
     # Постобработка: модель не может назвать статью, которой не было среди кандидатов
     allowed = {a.id for a in candidates}
