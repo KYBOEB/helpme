@@ -1,0 +1,635 @@
+/* ==========================================================================
+   «Помоги мне» — стили страницы чата
+   Всё локально: системный шрифт, эмодзи и инлайновый SVG вместо иконок.
+   ========================================================================== */
+
+:root {
+  --accent: #C8102E;
+  --accent-hover: #A50D26;
+  --accent-soft: #FBE8EB;
+  --text: #1A1A1A;
+  --text-muted: #666666;
+  --bg: #FAFAFA;
+  --card: #FFFFFF;
+  --border: #E4E4E4;
+  --ok: #1B7A4B;
+  --ok-soft: #E5F3EB;
+  --warn: #8A5A00;
+  --warn-soft: #FFF3D1;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(26, 26, 26, 0.05), 0 4px 14px rgba(26, 26, 26, 0.06);
+  --dur: 180ms;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --content-w: 760px;
+}
+
+/* Проектор: крупнее шрифт и шире колонка — жюри смотрит издалека */
+@media (min-width: 1440px) {
+  html { font-size: 18px; }
+  :root { --content-w: 900px; }
+}
+
+/* ---------- База ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+button { font: inherit; color: inherit; }
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Каркас ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* ---------- Шапка ---------- */
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.brand-text { min-width: 0; }
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.brand-subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mock-badge {
+  flex: none;
+  padding: 0.125rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.header-link {
+  flex: none;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color var(--dur), color var(--dur);
+}
+
+.link-short { display: none; }
+
+.header-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Прокручиваемая область ---------- */
+
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.feed {
+  max-width: var(--content-w);
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.feed:empty { padding: 0; }
+
+/* ---------- Пустое состояние ---------- */
+
+.empty {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: clamp(2rem, 10vh, 5rem) 1.25rem 1rem;
+}
+
+.empty-title {
+  margin: 0 0 0.375rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.empty-text {
+  margin: 0 0 1.5rem;
+  color: var(--text-muted);
+}
+
+.examples {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+
+.example {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--dur), background-color var(--dur);
+}
+
+.example:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.example-icon {
+  flex: none;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* ---------- Сообщения ---------- */
+
+.msg {
+  display: flex;
+  gap: 0.625rem;
+  animation: msg-in var(--dur) ease-out;
+}
+
+.msg--user { justify-content: flex-end; }
+.msg--bot  { align-items: flex-start; }
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  margin-top: 0.125rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.msg-body {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: min(calc(100% - 2.625rem), 42rem);
+}
+
+/* Для пошагового гида карточке нужна вся ширина колонки */
+.msg-body--wide {
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+.msg-body--wide > .bubble { align-self: flex-start; }
+
+.bubble {
+  max-width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+}
+
+.msg--bot .bubble {
+  background: var(--card);
+  box-shadow: var(--shadow);
+  border-top-left-radius: 4px;
+}
+
+.msg--user .bubble {
+  max-width: min(80%, 36rem);
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.bubble-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg--bot .bubble--error {
+  display: flex;
+  gap: 0.5rem;
+  background: #FFF6F7;
+  border: 1px solid #F1C9CF;
+  box-shadow: none;
+}
+
+.bubble-icon { flex: none; }
+
+.msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ---------- Индикатор «печатает» ---------- */
+
+.msg--bot .typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0.9rem 1rem;
+}
+
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: typing 1.2s infinite ease-in-out;
+}
+.typing-dot:nth-of-type(2) { animation-delay: 0.15s; }
+.typing-dot:nth-of-type(3) { animation-delay: 0.3s; }
+
+@keyframes typing {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40%           { opacity: 1;    transform: translateY(-3px); }
+}
+
+@keyframes typing-fade {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+
+/* ---------- Кнопки ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.125rem;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur), border-color var(--dur), color var(--dur);
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn--primary:hover { background: var(--accent-hover); }
+
+.btn--ghost {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text);
+}
+.btn--ghost:hover { border-color: #BDBDBD; }
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Быстрые ответы */
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  min-height: 2.5rem;
+  padding: 0.4rem 0.95rem;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--accent);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur), color var(--dur);
+}
+
+.chip:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ---------- Пошаговый гид ---------- */
+
+.step-card {
+  padding: 1rem 1.25rem 1.125rem;
+  background: var(--card);
+  border-radius: var(--radius);
+  border-left: 4px solid var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.step-counter {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.progress {
+  height: 4px;
+  margin: 0.5rem 0 0.875rem;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 400ms ease;
+}
+
+.step-text {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Пройденный шаг: одна приглушённая строка */
+.step-card.is-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.875rem;
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  color: var(--text-muted);
+}
+
+.step-card.is-failed,
+.step-card.is-skipped { border-left-color: #BDBDBD; }
+
+.step-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.is-failed .step-mark,
+.is-skipped .step-mark {
+  background: #EEEEEE;
+  color: var(--text-muted);
+}
+
+.step-collapsed-text {
+  min-width: 0;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Временная карточка итога (этап 2 — полноценная) */
+.card-draft {
+  padding: 0.75rem 1rem;
+  background: var(--card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.card-draft p { margin: 0.125rem 0; }
+
+/* ---------- Поле ввода ---------- */
+
+.composer {
+  flex: none;
+  padding: 0.75rem 1.25rem calc(0.75rem + env(safe-area-inset-bottom));
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+
+.composer-inner {
+  max-width: var(--content-w);
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.375rem 0.375rem 0.375rem 1rem;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--dur);
+}
+
+.composer-inner:focus-within { border-color: var(--accent); }
+
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 10rem;
+  padding: 0.55rem 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.5;
+  resize: none;
+}
+
+/* Фокус поля показывает рамка контейнера */
+.composer textarea:focus,
+.composer textarea:focus-visible { outline: none; }
+
+.counter {
+  align-self: center;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.counter.is-limit {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.send-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--dur);
+}
+.send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.send-btn:disabled {
+  background: #D6D6D6;
+  cursor: not-allowed;
+}
+
+.composer-hint {
+  max-width: var(--content-w);
+  margin: 0.375rem auto 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---------- Телефон ---------- */
+
+@media (max-width: 520px) {
+  .header { padding: 0.625rem 0.875rem; gap: 0.5rem; }
+  .brand { gap: 0.5rem; }
+  .brand-logo { width: 2.25rem; height: 2.25rem; }
+  .brand-subtitle { display: none; }
+  .header-link { padding: 0.4rem 0.75rem; font-size: 0.875rem; }
+  /* Узкий экран: короткая подпись, полная остаётся для скринридера */
+  .link-full { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .link-short { display: inline; }
+
+  .feed { padding: 1rem 0.875rem; }
+  .empty { padding-left: 0.875rem; padding-right: 0.875rem; }
+  .empty-title { font-size: 1.5rem; }
+  .examples { grid-template-columns: 1fr; }
+
+  .step-card { padding: 0.875rem 1rem 1rem; }
+  .step-actions .btn { flex: 1 1 8rem; }
+
+  .composer { padding-left: 0.875rem; padding-right: 0.875rem; }
+}
+
+/* Подсказка про Shift+Enter не нужна на сенсорных экранах */
+@media (hover: none) {
+  .composer-hint { display: none; }
+}
+
+/* ---------- Меньше движения ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Точки остаются, но только мерцают, без прыжков */
+  .typing-dot {
+    animation-name: typing-fade !important;
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
