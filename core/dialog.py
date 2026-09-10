@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from common.models import (Article, ChatRequest, ChatResponse, Reply, Slot,
                            TicketCard)
 from core import security
+from core.redact import redact
 from db import repo
 from db.models import Ticket
 from kb.loader import load_articles
@@ -122,7 +123,12 @@ def _solve(db: Session, ticket: Ticket) -> ChatResponse:
             last_user = m["content"]
             break
 
-    answer = answerer.make_answer(art, slots, last_user)
+    safe_slots = {k: redact(v)[0] for k, v in slots.items()}
+    safe_last, found = redact(last_user)
+    if found:
+        repo.log_event(db, ticket.id, "redacted", found)
+
+    answer = answerer.make_answer(art, safe_slots, safe_last)
     steps = answer.steps or art.steps
     # Страховка: модель не имеет права добавлять шаги, которых нет в статье
     if len(steps) > len(art.steps):
@@ -159,7 +165,16 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     candidates = [a for a, _ in hits]
     known = repo.slots_dict(db, ticket.id)
 
-    result = router.route(user_text, repo.history(db, ticket.id), candidates, known)
+    # Поиск идёт по оригиналу — он никуда не уходит и точнее ищет.
+    # Во внешнюю модель отправляем уже очищенный текст.
+    safe_text, found = redact(user_text)
+    if found:
+        repo.log_event(db, ticket.id, "redacted", found)
+    safe_hist = [{"role": m["role"], "content": redact(m["content"])[0]}
+                 for m in repo.history(db, ticket.id)]
+    safe_known = {k: redact(v)[0] for k, v in known.items()}
+
+    result = router.route(safe_text, safe_hist, candidates, safe_known)
 
     # Постобработка: модель не может назвать статью, которой не было среди кандидатов
     allowed = {a.id for a in candidates}
