@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Панель оператора — Помоги мне</title>
+    <!-- Никаких CDN. Только локальный style.css -->
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body class="admin-body">
+    <header class="admin-header">
+      <h1>Панель оператора</h1>
+      <nav class="admin-tabs" role="tablist">
+        <button class="tab is-active" data-tab="tickets" role="tab">
+          Обращения
+        </button>
+        <button class="tab" data-tab="analytics" role="tab">Аналитика</button>
+        <button class="tab" data-tab="kb" role="tab">База знаний</button>
+      </nav>
+    </header>
+
+    <main class="admin-main">
+      <!-- ===================== ВКЛАДКА 1: ОБРАЩЕНИЯ ===================== -->
+      <section id="tab-tickets" class="tab-panel is-active" role="tabpanel">
+        <div class="filters">
+          <label
+            >Категория
+            <select id="filter-category">
+              <option value="">Все</option>
+            </select>
+          </label>
+          <label
+            >Статус
+            <select id="filter-status">
+              <option value="">Все</option>
+              <option value="resolved_by_bot">Решено ботом</option>
+              <option value="escalated">Передано специалисту</option>
+              <option value="in_progress">В работе</option>
+            </select>
+          </label>
+          <label
+            >Поиск
+            <input
+              id="filter-search"
+              type="search"
+              placeholder="Текст обращения…"
+            />
+          </label>
+          <button id="btn-refresh" class="btn">Обновить</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="tickets-table">
+            <thead>
+              <tr>
+                <th>№</th>
+                <th>Время</th>
+                <th>Категория</th>
+                <th>Уверенность</th>
+                <th>Статус</th>
+                <th>Действий</th>
+                <th>Оценка</th>
+              </tr>
+            </thead>
+            <tbody id="tickets-body">
+              <!-- заполняется из admin.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <p id="tickets-empty" class="empty hidden">Обращений не найдено</p>
+      </section>
+
+      <!-- ===================== ВКЛАДКА 2: АНАЛИТИКА ===================== -->
+      <section id="tab-analytics" class="tab-panel" role="tabpanel">
+        <!-- Главная цифра кейса -->
+        <div class="hero-metric">
+          <div class="hero-value" id="metric-actions">—</div>
+          <div class="hero-label">
+            среднее число действий пользователя до решения
+          </div>
+          <div class="hero-note">
+            Цель ТЗ: решение с минимальным количеством действий
+          </div>
+        </div>
+
+        <div class="analytics-grid">
+          <!-- Кольцевая диаграмма на conic-gradient -->
+          <div class="card">
+            <h3>Решено без специалиста</h3>
+            <div class="donut" id="donut-resolved" style="--p: 0">
+              <div class="donut-hole">
+                <span id="donut-resolved-value">—</span>
+              </div>
+            </div>
+            <p class="muted" id="donut-resolved-caption">—</p>
+          </div>
+
+          <!-- Горизонтальные полосы по категориям -->
+          <div class="card">
+            <h3>Распределение по категориям</h3>
+            <div id="category-bars" class="bars">
+              <!-- заполняется из admin.js -->
+            </div>
+          </div>
+
+          <!-- Средняя оценка -->
+          <div class="card">
+            <h3>Средняя оценка ответа</h3>
+            <div class="stat-value" id="metric-rating">—</div>
+            <p class="muted">Оценок: <span id="metric-rating-count">—</span></p>
+          </div>
+
+          <!-- Среднее время до первого шага -->
+          <div class="card">
+            <h3>Время до первого шага решения</h3>
+            <div class="stat-value" id="metric-first-step">—</div>
+          </div>
+
+          <!-- Точность классификации -->
+          <div class="card">
+            <h3>Точность классификации</h3>
+            <div class="stat-value" id="metric-accuracy">—</div>
+            <p class="muted">по результатам регресс-прогона</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== ВКЛАДКА 3: БАЗА ЗНАНИЙ ===================== -->
+      <section id="tab-kb" class="tab-panel" role="tabpanel">
+        <div class="filters">
+          <label
+            >Поиск по базе
+            <input
+              id="kb-search"
+              type="search"
+              placeholder="Например: почта, VPN, пароль…"
+            />
+          </label>
+          <button id="kb-btn" class="btn">Найти</button>
+        </div>
+        <div id="kb-results" class="kb-results">
+          <!-- заполняется из admin.js -->
+        </div>
+      </section>
+    </main>
+
+    <!-- ===================== БОКОВАЯ ПАНЕЛЬ ОБРАЩЕНИЯ ===================== -->
+    <aside id="drawer" class="drawer hidden" aria-hidden="true">
+      <div class="drawer-head">
+        <h2 id="drawer-title">Обращение</h2>
+        <button id="drawer-close" class="btn-ghost" aria-label="Закрыть">
+          ×
+        </button>
+      </div>
+      <div class="drawer-body" id="drawer-body">
+        <!-- заполняется из admin.js -->
+      </div>
+      <div class="drawer-foot">
+        <button id="btn-download-json" class="btn">Скачать JSON</button>
+        <label class="switch">
+          <input type="checkbox" id="toggle-share" />
+          <span>Открыть доступ по ссылке</span>
+        </label>
+        <button id="btn-copy-link" class="btn">Копировать ссылку</button>
+      </div>
+    </aside>
+
+    <script src="/static/admin.js" defer></script>
+  </body>
+</html>
