@@ -1,18 +1,23 @@
+"""POST /api/chat — единственный эндпоинт диалога. ВЛАДЕЛЕЦ: A."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+import logging
 
-from common.models import ChatRequest, ChatResponse, Reply
+from fastapi import APIRouter, Request
 
+from common.models import ChatRequest, ChatResponse
+from core import dialog
+from db import repo
+
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest) -> ChatResponse:
-    # TODO(A): передать в core.dialog
-    return ChatResponse(
-        ticket_id="t_demo",
-        token="s_demo",
-        state="NEW",
-        reply=Reply(type="error", text="Ядро диалога ещё не подключено"),
-    )
+def chat(req: ChatRequest, request: Request) -> ChatResponse:
+    client_key = req.ticket_id or (request.client.host if request.client else "anon")
+    db = repo.get_session()
+    try:
+        return dialog.handle(db, req, client_key)
+    finally:
+        db.close()
