@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход оператора — Помоги мне</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .login-wrap { display: grid; place-items: center; min-height: 100vh; padding: 1.25rem; }
+    .login-card {
+      width: 100%; max-width: 22rem; padding: 2rem;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .login-card h1 { margin: 0 0 0.25rem; font-size: 1.375rem; }
+    .login-card p  { margin: 0 0 1.5rem; color: var(--text-muted); font-size: 0.9375rem; }
+    .login-card label { display: block; margin-bottom: 0.375rem; font-size: 0.8125rem;
+                        font-weight: 600; color: var(--text-muted); }
+    .login-card input {
+      width: 100%; min-height: 2.75rem; padding: 0.5rem 0.875rem;
+      border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      font: inherit; background: var(--bg); color: var(--text);
+    }
+    .login-card input:focus { border-color: var(--accent); outline: none; }
+    .login-card button {
+      width: 100%; margin-top: 1rem; min-height: 2.75rem; border: 0;
+      border-radius: var(--radius-sm); background: var(--accent); color: #fff;
+      font: inherit; font-weight: 600; cursor: pointer;
+    }
+    .login-card button:hover { background: var(--accent-hover); }
+    .login-err { margin-top: 0.875rem; color: var(--accent); font-size: 0.875rem; min-height: 1.25rem; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <form class="login-card" id="form">
+      <h1>Панель оператора</h1>
+      <p>Раздел для специалистов поддержки</p>
+      <label for="password">Пароль</label>
+      <input id="password" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit">Войти</button>
+      <div class="login-err" id="err"></div>
+    </form>
+  </div>
+  <script>
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("err");
+      err.textContent = "";
+      try {
+        const r = await fetch("/api/operator/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: document.getElementById("password").value }),
+        });
+        if (r.ok) { location.href = "/static/admin.html"; return; }
+        const d = await r.json().catch(() => ({}));
+        err.textContent = d.detail || "Не удалось войти";
+      } catch {
+        err.textContent = "Нет связи с сервером";
+      }
+    });
+  </script>
+</body>
+</html>

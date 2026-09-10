@@ -92,6 +92,10 @@ class Reply(BaseModel):
     text: str
     quick_replies: list[str] = Field(default_factory=list)
     steps: list[str] = Field(default_factory=list)
+    # "kb"      — шаги взяты из карточки базы знаний (по умолчанию)
+    # "general" — общая рекомендация модели, В БАЗЕ ЗНАНИЙ РЕШЕНИЯ НЕТ.
+    #             Фронтенд обязан пометить такой ответ отдельной плашкой.
+    source: Literal["kb", "general"] = "kb"
 
 
 class TicketCard(BaseModel):

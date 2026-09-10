@@ -40,6 +40,8 @@ class Ticket(Base):
     needs_specialist: Mapped[bool] = mapped_column(Boolean, default=False)
     resolution: Mapped[str] = mapped_column(Text, default="")
     rating: Mapped[int | None] = mapped_column(Integer, default=None)
+    assist_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    operator_taken: Mapped[bool] = mapped_column(Boolean, default=False)
     share_token: Mapped[str | None] = mapped_column(String(64), default=None)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="ticket",
