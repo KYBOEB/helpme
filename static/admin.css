@@ -574,3 +574,114 @@
 
 /* Бейджи внутри ячеек таблицы идут вторыми, нужен отступ */
 .admin-body .tickets-table td .badge { margin-left: 0.375rem; }
+
+/* ---------- Форма добавления статьи ---------- */
+
+.admin-body .kb-form {
+  max-width: 42rem;
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.admin-body .kb-field { margin-bottom: 1rem; }
+.admin-body .kb-field:last-of-type { margin-bottom: 0; }
+
+.admin-body .kb-field > label,
+.admin-body .kb-field-head label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.admin-body .kb-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.admin-body .kb-field-head label { margin-bottom: 0.375rem; }
+
+.admin-body .kb-add {
+  padding: 0.125rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.admin-body .kb-add:hover { background: var(--accent-soft); }
+
+.admin-body .kb-form input[type="text"],
+.admin-body .kb-form select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.375rem 0.75rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.admin-body .kb-form input[type="text"]:focus,
+.admin-body .kb-form select:focus { border-color: var(--accent); outline: none; }
+
+.admin-body .kb-list { display: flex; flex-direction: column; gap: 0.375rem; }
+
+.admin-body .kb-row { display: flex; align-items: center; gap: 0.375rem; }
+
+.admin-body .kb-remove {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur), color var(--dur);
+}
+.admin-body .kb-remove:hover { border-color: var(--accent); color: var(--accent); }
+
+.admin-body .kb-hint {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.admin-body .kb-error,
+.admin-body .kb-success {
+  margin: 1rem 0 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9375rem;
+}
+.admin-body .kb-error { background: var(--accent-soft); color: var(--accent); }
+.admin-body .kb-success { background: var(--ok-soft); color: var(--ok); }
+
+.admin-body .kb-actions { margin-top: 1.25rem; }
+
+.admin-body .kb-submit {
+  min-height: 2.75rem;
+  padding: 0.5rem 1.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.admin-body .kb-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.admin-body .kb-submit:disabled { opacity: 0.6; cursor: not-allowed; }

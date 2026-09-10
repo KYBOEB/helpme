@@ -18,6 +18,7 @@ import os
 import re
 
 from common.models import AnswerResult
+from core import demo_cache
 from llm.client import chat
 
 log = logging.getLogger(__name__)
@@ -55,7 +56,21 @@ DANGEROUS = re.compile(
 
 
 def general_help(user_text: str, category: str) -> AnswerResult | None:
-    """Вернуть общую рекомендацию или None, если модель недоступна либо ответ опасен."""
+    """Вернуть общую рекомендацию или None, если модель недоступна либо ответ опасен.
+
+    Ответы кэшируются наравне с остальными вызовами модели: в демонстрационном
+    режиме эта ветка тоже обязана работать без сети, иначе страховка на защите
+    неполная — а именно здесь она нужнее всего.
+    """
+    key = demo_cache.key_for("assist", user_text, category)
+    hit = demo_cache.get(key)
+    if hit is not None:
+        return AnswerResult(**hit)
+
+    if demo_cache.demo_mode():
+        log.info("демо-режим: общей рекомендации нет в кэше, передаём специалисту")
+        return None
+
     raw = chat(
         [{"role": "system", "content": SYSTEM},
          {"role": "user", "content": f"Категория (предположительно): {category}\n"
@@ -80,4 +95,6 @@ def general_help(user_text: str, category: str) -> AnswerResult | None:
     if not steps:
         return None
 
-    return AnswerResult(text=intro, steps=steps[:4])
+    result = AnswerResult(text=intro, steps=steps[:4])
+    demo_cache.put(key, result.model_dump())
+    return result

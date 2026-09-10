@@ -60,6 +60,21 @@ def _key(kind: str, *parts: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
+def key_for(kind: str, *parts: str) -> str:
+    """Ключ кэша для модулей за пределами этого файла."""
+    return _key(kind, *parts)
+
+
+def get(key: str) -> dict | None:
+    return _cache.get(key)
+
+
+def put(key: str, value: dict) -> None:
+    with _lock:
+        _cache[key] = value
+        _save()
+
+
 def stats() -> dict:
     return {"entries": len(_cache), "demo_mode": demo_mode(), "path": CACHE_PATH}
 

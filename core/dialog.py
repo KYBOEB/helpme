@@ -173,9 +173,10 @@ def _assist(db: Session, ticket: Ticket, user_text: str,
     text = (f"{intro} Обращение уже передано специалисту — он подключится. "
             f"А пока можно попробовать общие шаги, они безопасны.")
 
+    # Только та кнопка, которой нет в карточке шага
     return _respond(db, ticket, Reply(
         type="steps", text=text, steps=answer.steps, source="general",
-        quick_replies=["Получилось", "Не получилось", "Позвать специалиста"]))
+        quick_replies=["Позвать специалиста"]))
 
 
 def _solve(db: Session, ticket: Ticket) -> ChatResponse:
@@ -208,8 +209,9 @@ def _solve(db: Session, ticket: Ticket) -> ChatResponse:
     repo.log_event(db, ticket.id, "solved", {"article_id": art.id, "steps": len(steps)})
 
     intro = answer.text or f"Похоже на «{art.title}». Давайте по шагам."
-    return _respond(db, ticket, Reply(type="steps", text=intro, steps=steps,
-                                      quick_replies=["Получилось", "Не получилось"]))
+    # Кнопки «Получилось / Не получилось» рисует сама карточка шага на фронтенде.
+    # Дублировать их в quick_replies нельзя — на экране появятся две пары.
+    return _respond(db, ticket, Reply(type="steps", text=intro, steps=steps))
 
 
 def _ask_slot(db: Session, ticket: Ticket, key: str) -> ChatResponse:

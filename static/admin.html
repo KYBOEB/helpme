@@ -120,9 +120,64 @@
 
       <!-- ===================== ВКЛАДКА 4: БАЗА ЗНАНИЙ ===================== -->
       <section id="tab-kb" class="tab-panel" role="tabpanel">
-        <!-- Сюда участник D вставит форму добавления статьи.
-             Отправляет POST /api/kb/articles. Ничего вокруг не трогать. -->
-        <div id="kb-form-slot"></div>
+<div id="kb-form-slot">
+        <h2 class="section-title">Добавить статью в базу знаний</h2>
+        <p class="panel-note">
+          Статья попадёт в поиск сразу — перезапуск не нужен.
+        </p>
+        <form id="kb-form" class="kb-form" novalidate>
+          <div class="kb-field">
+            <label for="kb-category">Категория</label>
+            <select id="kb-category" name="category" required>
+              <option value="" disabled selected>Выберите категорию</option>
+              <option value="рабочее место">Рабочее место</option>
+              <option value="доступы">Доступы</option>
+              <option value="VPN">VPN</option>
+              <option value="корпоративная почта">Корпоративная почта</option>
+              <option value="Wi-Fi">Wi-Fi</option>
+              <option value="программное обеспечение">Программное обеспечение</option>
+              <option value="оборудование">Оборудование</option>
+            </select>
+          </div>
+
+          <div class="kb-field">
+            <label for="kb-title">Заголовок статьи</label>
+            <input id="kb-title" name="title" type="text" required
+                   placeholder="Например: Не работает кофемашина">
+          </div>
+
+          <div class="kb-field">
+            <div class="kb-field-head">
+              <label>Симптомы — как пользователь опишет проблему</label>
+              <button type="button" class="kb-add" data-add="symptoms">+ Добавить</button>
+            </div>
+            <div id="kb-symptoms" class="kb-list"></div>
+            <p class="kb-hint">Нужен хотя бы один — по этим фразам помощник найдёт статью.</p>
+          </div>
+
+          <div class="kb-field">
+            <div class="kb-field-head">
+              <label>Шаги решения</label>
+              <button type="button" class="kb-add" data-add="steps">+ Добавить шаг</button>
+            </div>
+            <div id="kb-steps" class="kb-list"></div>
+            <p class="kb-hint">Можно оставить пустыми — тогда обращение сразу уйдёт специалисту.</p>
+          </div>
+
+          <div class="kb-field">
+            <label for="kb-escalate">Когда сразу звать специалиста (необязательно)</label>
+            <input id="kb-escalate" name="escalate_if" type="text"
+                   placeholder="Например: аппарат искрит">
+          </div>
+
+          <p id="kb-error" class="kb-error" role="alert" hidden></p>
+          <p id="kb-success" class="kb-success" role="status" hidden></p>
+
+          <div class="kb-actions">
+            <button type="submit" id="kb-submit" class="kb-submit">Добавить статью</button>
+          </div>
+        </form>
+        </div>
 
         <h2 class="section-title">Пробелы базы знаний</h2>
         <p class="panel-note">

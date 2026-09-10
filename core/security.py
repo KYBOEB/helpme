@@ -29,7 +29,12 @@ def check_owner(ticket, token: str | None) -> None:
     Отдаём именно 404, а не 403: так снаружи не отличить «нет доступа»
     от «нет такого обращения», и перебором чужие id не нащупать.
     """
-    if ticket is None or not token or not secrets.compare_digest(ticket.token, token):
+    if ticket is None or not token:
+        raise HTTPException(status_code=404, detail="Обращение не найдено")
+    # Сравниваем байты: compare_digest не работает с не-ASCII строками и
+    # на подделанном токене с кириллицей падал бы с 500 вместо честного 404.
+    if not secrets.compare_digest(ticket.token.encode("utf-8"),
+                                  str(token).encode("utf-8")):
         raise HTTPException(status_code=404, detail="Обращение не найдено")
 
 
@@ -50,7 +55,7 @@ def assert_can_accept(ticket) -> None:
 # ------------------------------------------------------------ частота запросов
 
 _WINDOW_SECONDS = 60
-_MAX_REQUESTS = 20
+_MAX_REQUESTS = 30
 _hits: dict[str, deque] = defaultdict(deque)
 
 
