@@ -542,7 +542,7 @@ function renderRequestError(err, payload) {
   const text = ERROR_TEXT[status] || ERROR_TEXT[code] || ERROR_TEXT.default;
 
   if (status === 404 || status === 409) {
-    showError(text, { label: "Новое обращение", onClick: resetConversation });
+    showError(text, { label: "Закрыть обращение", onClick: resetConversation });
   } else if (status === 422) {
     showError(text, null); // повтор того же текста не поможет
   } else {
