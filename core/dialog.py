@@ -24,17 +24,29 @@ from core import security
 from core.redact import redact
 from db import repo
 from db.models import Ticket
-from kb.loader import load_articles
+from core import kb_store
 from kb.retriever import HybridRetriever
-from core import demo_cache
+from core import assist, demo_cache
 from llm import answerer, router
 
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
 MAX_CLARIFYING_QUESTIONS = int(os.getenv("MAX_CLARIFYING_QUESTIONS", "2"))
 
-_articles = load_articles()
-_retriever = HybridRetriever(_articles)
-_by_id = {a.id: a for a in _articles}
+_articles: list[Article] = []
+_retriever: HybridRetriever | None = None
+_by_id: dict[str, Article] = {}
+
+
+def reload_kb() -> int:
+    """Перечитать базу знаний. Вызывается на старте и после правок из панели."""
+    global _articles, _retriever, _by_id
+    _articles = kb_store.all_articles()
+    _retriever = HybridRetriever(_articles)
+    _by_id = {a.id: a for a in _articles}
+    return len(_articles)
+
+
+reload_kb()
 
 
 # ---------------------------------------------------------------- вспомогательное
@@ -88,7 +100,7 @@ def _notify_external(db: Session, ticket: Ticket) -> None:
     """Отправить карточку во внешнюю систему. Интеграция не имеет права
     уронить основной сценарий, поэтому любая ошибка только логируется."""
     try:
-        from api.export import send_webhook  # функция участника E
+        from api.export import send_webhook
     except ImportError:
         return
     try:
@@ -114,8 +126,7 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
             "Стандартные шаги не помогли — значит случай нетиповой.",
         "обращение вне тематики технической поддержки":
             "Этот вопрос выходит за рамки технической поддержки.",
-        "пользователь запросил специалиста":
-            "Передаю обращение живому специалисту.",
+        "пользователь запросил специалиста": "Конечно.",
     }.get(reason, "Передаю обращение специалисту.")
 
     _notify_external(db, ticket)
@@ -124,6 +135,36 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
             f"номер — {ticket.id}. Категорию, ваши ответы и выполненные шаги "
             f"он уже видит, объяснять заново ничего не нужно.")
     return _respond(db, ticket, Reply(type="escalation", text=text), with_card=True)
+
+
+def _assist(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
+    """Второй уровень каскада: в базе знаний решения нет.
+
+    Умная модель даёт общую рекомендацию, но она честно помечается как НЕ из
+    базы знаний, обращение попадает в очередь к специалисту, а запрос
+    записывается как пробел в базе — по нему потом напишут статью.
+    """
+    safe_text, _ = redact(user_text)
+    repo.log_event(db, ticket.id, "kb_gap",
+                   {"query": safe_text[:300], "category": ticket.category})
+
+    answer = assist.general_help(safe_text, ticket.category or "не определено")
+    if answer is None:
+        return _escalate(db, ticket, "подходящая статья не найдена")
+
+    ticket.assist_used = True
+    ticket.needs_specialist = True          # уже в очереди, не дожидаясь исхода
+    ticket.state = "VERIFYING"
+    ticket.steps_json = json.dumps(answer.steps, ensure_ascii=False)
+    repo.log_event(db, ticket.id, "assisted", {"steps": len(answer.steps)})
+
+    intro = answer.text or "Готовой инструкции для этого случая в базе знаний нет."
+    text = (f"{intro} Обращение уже передано специалисту — он подключится. "
+            f"А пока можно попробовать общие шаги, они безопасны.")
+
+    return _respond(db, ticket, Reply(
+        type="steps", text=text, steps=answer.steps, source="general",
+        quick_replies=["Получилось", "Не получилось", "Позвать специалиста"]))
 
 
 def _solve(db: Session, ticket: Ticket) -> ChatResponse:
@@ -213,7 +254,7 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
         return _escalate(db, ticket, "обращение вне тематики технической поддержки")
 
     if article_id is None:
-        return _escalate(db, ticket, "подходящая статья не найдена")
+        return _assist(db, ticket, user_text)
 
     # Уверенности не хватает — не гадаем, а предлагаем выбрать
     if ticket.confidence < CONFIDENCE_THRESHOLD:
@@ -245,6 +286,9 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
 def _verify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     """Пользователь сообщил, помогло или нет."""
     low = user_text.lower()
+    if "специалист" in low or "оператор" in low:
+        return _escalate(db, ticket, "пользователь запросил специалиста")
+
     ok = any(w in low for w in ("получилось", "помогло", "решено", "да", "спасибо"))
     failed = any(w in low for w in ("не получилось", "не помогло", "не работает", "нет"))
 
@@ -253,9 +297,12 @@ def _verify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
 
     if ok:
         ticket.state = "RESOLVED"
-        ticket.resolved_by_bot = True
-        ticket.needs_specialist = False
-        ticket.resolution = "решено без специалиста"
+        # Общая рекомендация не засчитывается как «решено ботом»: решения
+        # в базе знаний не было, и метрику этим завышать нечестно.
+        ticket.resolved_by_bot = not ticket.assist_used
+        ticket.needs_specialist = ticket.assist_used
+        ticket.resolution = ("решено общей рекомендацией, статья в базе нужна"
+                             if ticket.assist_used else "решено без специалиста")
         repo.log_event(db, ticket.id, "resolved",
                        {"actions": ticket.user_actions_count})
         text = answerer.make_summary(_card(db, ticket))

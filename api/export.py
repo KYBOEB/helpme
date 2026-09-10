@@ -1,375 +1,176 @@
 """
-api/export.py — выгрузка данных и интеграции.
+Выгрузка данных и публичные ссылки. ВЛАДЕЛЕЦ: A.
 
-Отвечает за:
-- CSV всех обращений (utf-8-sig, разделитель ;) — чтобы Excel в русской локали
-  открывал без кракозябр и в правильных колонках;
-- JSON карточки одного обращения с Content-Disposition: attachment;
-- публичную ссылку /s/{share_token} — включается и выключается;
-- вебхук во внешний Service Desk (не роняет основной сценарий).
-
-Роутеры:
-- router         (prefix="/api")  — export.csv, export.json, share
-- public_router  (без префикса)   — GET /s/{share_token}
-
-Модель карточки берём из common/models.py — TicketCard. Свою копию не заводим.
-Доступ к БД — через db.repo.get_session() и готовые функции:
-    repo.list_tickets, repo.get_ticket, repo.slots_dict, repo.history, repo.log_event.
+Организаторы отдельно называли ценностью выгрузку данных, передачу их в другие
+системы и управление доступом по ссылке — здесь всё это.
 """
-
 from __future__ import annotations
 
 import csv
-import html
 import io
 import json
+import logging
 import os
 import secrets
-from datetime import datetime
 
-import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
 
-from common.models import TicketCard
+from core.auth import require_operator
 from db import repo
-from core.security import check_owner  # проверка владения токеном (404 при провале)
 
-
-# ---------------------------------------------------------------- роутеры
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["export"])
 public_router = APIRouter(tags=["public"])
 
-
-# ---------------------------------------------------------------- схемы
-
-class ShareIn(BaseModel):
-    """Тело POST /api/tickets/{id}/share."""
-    enabled: bool
-    # token приходит от клиента — тот же, что в ChatResponse.
-    # Проверяется через security.check_owner.
-    token: str | None = None
-
-
-# ---------------------------------------------------------------- утилиты
-
 CSV_COLUMNS = [
-    "ticket_id",
-    "created_at",
-    "category",
-    "article_id",
-    "confidence",
-    "problem_summary",
-    "resolved_by_bot",
-    "needs_specialist",
-    "user_actions_count",
-    "rating",
+    "ticket_id", "created_at", "state", "category", "article_id", "confidence",
+    "problem_summary", "resolved_by_bot", "needs_specialist", "assist_used",
+    "user_actions_count", "rating",
 ]
 
 
-def _fmt_dt(value) -> str:
-    """Приводим created_at к ISO-строке. Поле может быть str или datetime."""
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, datetime):
-        return value.isoformat(timespec="seconds")
-    return str(value)
-
-
-def _card_to_dict(card: TicketCard) -> dict:
-    """
-    Карточка в формате TicketCard, без чувствительных полей.
-    Токен владения и share_token в JSON-выгрузку НЕ попадают.
-    """
-    data = card.model_dump() if hasattr(card, "model_dump") else dict(card)
-    # На всякий случай вырезаем чувствительные поля, даже если они появятся
-    # в модели в будущем.
-    for secret in ("token", "share_token"):
-        data.pop(secret, None)
-    return data
-
-
-def _build_card(db, ticket) -> TicketCard:
-    """Собираем TicketCard из объекта Ticket и связанных данных."""
-    slots = repo.slots_dict(db, ticket.ticket_id) or {}
-    history = repo.history(db, ticket.ticket_id, limit=1000) or []
-
-    # Пробуем разные способы получить поля. У TicketCard часть полей может
-    # отсутствовать в БД и вычисляться — тогда просто отдаём то, что есть.
-    return TicketCard(
-        ticket_id=ticket.ticket_id,
-        category=getattr(ticket, "category", "") or "",
-        problem_summary=getattr(ticket, "problem_summary", "") or "",
-        slots=slots,
-        steps_done=list(getattr(ticket, "steps_done", []) or []),
-        resolved_by_bot=bool(getattr(ticket, "resolved_by_bot", False)),
-        needs_specialist=bool(getattr(ticket, "needs_specialist", False)),
-        article_id=getattr(ticket, "article_id", None),
-        created_at=_fmt_dt(getattr(ticket, "created_at", None)),
-    )
-
-
-# ---------------------------------------------------------------- CSV
-
-@router.get("/tickets/export.csv")
-def export_csv():
-    """
-    Все обращения одной таблицей.
-
-    - Кодировка utf-8-sig (BOM) — иначе Excel в русской локали покажет
-      кракозябры вместо кириллицы.
-    - Разделитель ';' — иначе Excel сложит всё в одну колонку.
-    """
+@router.get("/tickets/export.csv", dependencies=[Depends(require_operator)])
+def export_csv() -> StreamingResponse:
+    """Выгрузка всех обращений. UTF-8 с BOM и точка с запятой — чтобы Excel открыл как надо."""
     db = repo.get_session()
     try:
-        tickets = repo.list_tickets(db, limit=10000)
-
         buf = io.StringIO()
-        # csv.writer с dialect 'excel' + delimiter=';'
-        writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL,
-                            lineterminator="\r\n")
-
+        writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
         writer.writerow(CSV_COLUMNS)
-
-        for t in tickets:
+        for t in repo.list_tickets(db, limit=10000):
             writer.writerow([
-                getattr(t, "ticket_id", ""),
-                _fmt_dt(getattr(t, "created_at", None)),
-                getattr(t, "category", "") or "",
-                getattr(t, "article_id", "") or "",
-                getattr(t, "confidence", "") or "",
-                getattr(t, "problem_summary", "") or "",
-                int(bool(getattr(t, "resolved_by_bot", False))),
-                int(bool(getattr(t, "needs_specialist", False))),
-                getattr(t, "user_actions_count", "") or "",
-                getattr(t, "rating", "") or "",
+                t.id, t.created_at.isoformat(), t.state, t.category or "",
+                t.article_id or "", round(t.confidence, 2), t.problem_summary,
+                int(t.resolved_by_bot), int(t.needs_specialist), int(t.assist_used),
+                t.user_actions_count, t.rating if t.rating is not None else "",
             ])
-
-        payload = buf.getvalue().encode("utf-8-sig")
-
-        filename = f"tickets_{datetime.utcnow():%Y%m%d_%H%M%S}.csv"
-        headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": "text/csv; charset=utf-8",
-        }
-        return StreamingResponse(iter([payload]), headers=headers, media_type="text/csv")
+        data = "\ufeff" + buf.getvalue()
     finally:
         db.close()
 
+    return StreamingResponse(
+        io.BytesIO(data.encode("utf-8")),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="tickets.csv"'},
+    )
 
-# ---------------------------------------------------------------- JSON
 
-@router.get("/tickets/{ticket_id}/export.json")
-def export_json(ticket_id: str):
-    """
-    Карточка одного обращения в формате TicketCard.
-    Отдаётся с Content-Disposition: attachment — браузер скачает файл.
-    """
+def _card_dict(db, t) -> dict:
+    return {
+        "ticket_id": t.id,
+        "created_at": t.created_at.isoformat(),
+        "category": t.category,
+        "article_id": t.article_id,
+        "confidence": round(t.confidence, 2),
+        "problem_summary": t.problem_summary,
+        "slots": repo.slots_dict(db, t.id),
+        "steps_done": json.loads(t.steps_json or "[]"),
+        "resolved_by_bot": t.resolved_by_bot,
+        "needs_specialist": t.needs_specialist,
+        "assist_used": t.assist_used,
+        "resolution": t.resolution,
+        "messages": repo.history(db, t.id, limit=200),
+    }
+
+
+@router.get("/tickets/{ticket_id}/export.json", dependencies=[Depends(require_operator)])
+def export_json(ticket_id: str) -> JSONResponse:
+    """Карточка обращения в формате, который откроет любая внешняя система."""
     db = repo.get_session()
     try:
-        ticket = repo.get_ticket(db, ticket_id)
-        if ticket is None:
-            # Человеческий 404, а не трейсбек.
+        t = repo.get_ticket(db, ticket_id)
+        if t is None:
             raise HTTPException(status_code=404, detail="Обращение не найдено")
-
-        card = _build_card(db, ticket)
-        data = _card_to_dict(card)
-        body = json.dumps(data, ensure_ascii=False, indent=2)
-
-        filename = f"ticket_{ticket_id}.json"
-        headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": "application/json; charset=utf-8",
-        }
-        return JSONResponse(content=json.loads(body), headers=headers)
+        return JSONResponse(
+            _card_dict(db, t),
+            headers={"Content-Disposition": f'attachment; filename="{ticket_id}.json"'},
+        )
     finally:
         db.close()
 
 
-# ---------------------------------------------------------------- share
-
-@router.post("/tickets/{ticket_id}/share")
-def share_ticket(ticket_id: str, payload: ShareIn, request: Request):
-    """
-    Включить или выключить публичный доступ к обращению.
-
-    enabled=true  — генерируем случайный токен, пишем в share_token, возвращаем URL.
-    enabled=false — обнуляем share_token, ссылка перестаёт работать.
-
-    Владение проверяем через security.check_owner — при провале он поднимет 404.
-    """
+@router.post("/tickets/{ticket_id}/share", dependencies=[Depends(require_operator)])
+def share(ticket_id: str, payload: dict = Body(default={})) -> dict:
+    """Включить или выключить публичную ссылку на обращение."""
+    enabled = bool(payload.get("enabled"))
     db = repo.get_session()
     try:
-        ticket = repo.get_ticket(db, ticket_id)
-        if ticket is None:
+        t = repo.get_ticket(db, ticket_id)
+        if t is None:
             raise HTTPException(status_code=404, detail="Обращение не найдено")
 
-        # check_owner сам бросит нужное исключение (404),
-        # если токен чужой или отсутствует.
-        check_owner(ticket, payload.token)
+        if enabled:
+            t.share_token = t.share_token or secrets.token_urlsafe(16)
+            url = f"/s/{t.share_token}"
+        else:
+            t.share_token = None
+            url = None
 
-        if payload.enabled:
-            token = secrets.token_urlsafe(16)
-            ticket.share_token = token
-            repo.log_event(db, ticket_id, "share_enabled", {"token_hint": token[:6]})
-            url = str(request.base_url).rstrip("/") + f"/s/{token}"
-            return {"enabled": True, "url": url, "token": token}
-
-        # выключение
-        ticket.share_token = None
-        repo.log_event(db, ticket_id, "share_disabled", {})
-        return {"enabled": False, "url": None, "token": None}
+        repo.log_event(db, ticket_id, "share_toggled", {"enabled": enabled})
+        db.commit()
+        return {"ok": True, "enabled": enabled, "url": url}
     finally:
         db.close()
-
-
-# ---------------------------------------------------------------- публичная страница
-
-def _render_public_card(card: TicketCard) -> str:
-    """Простая HTML-страница карточки. Без шаблонизатора, без CDN."""
-    steps_html = "".join(
-        f"<li>{html.escape(str(s))}</li>" for s in (card.steps_done or [])
-    )
-    slots_html = "".join(
-        f"<li><b>{html.escape(str(k))}:</b> {html.escape(str(v))}</li>"
-        for k, v in (card.slots or {}).items()
-    )
-
-    status = "решено ботом" if card.resolved_by_bot else (
-        "передано специалисту" if card.needs_specialist else "в работе"
-    )
-
-    return f"""<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Обращение {html.escape(card.ticket_id)}</title>
-  <style>
-    body {{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-           background:#FAFAFA; color:#1A1A1A; margin:0; padding:24px; }}
-    .card {{ background:#fff; border-radius:12px; padding:24px; max-width:720px;
-            margin:0 auto; box-shadow:0 2px 12px rgba(0,0,0,.06); }}
-    h1 {{ margin:0 0 4px; font-size:20px; }}
-    .muted {{ color:#5A5A5A; font-size:.9rem; }}
-    dl {{ display:grid; grid-template-columns:auto 1fr; gap:4px 16px; margin:16px 0; }}
-    dt {{ color:#5A5A5A; }}
-    dd {{ margin:0; }}
-    h2 {{ font-size:16px; margin:20px 0 8px; }}
-    ol, ul {{ margin:0; padding-left:20px; }}
-    li {{ margin:4px 0; }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Обращение {html.escape(card.ticket_id)}</h1>
-    <div class="muted">Статус: {html.escape(status)}</div>
-
-    <dl>
-      <dt>Категория</dt><dd>{html.escape(card.category or "—")}</dd>
-      <dt>Статья</dt><dd>{html.escape(card.article_id or "—")}</dd>
-      <dt>Создано</dt><dd>{html.escape(card.created_at or "—")}</dd>
-    </dl>
-
-    <h2>Описание</h2>
-    <p>{html.escape(card.problem_summary or "—")}</p>
-
-    {f'<h2>Уточнения</h2><ul>{slots_html}</ul>' if slots_html else ''}
-    {f'<h2>Выполненные шаги</h2><ol>{steps_html}</ol>' if steps_html else ''}
-
-    <div class="muted" style="margin-top:24px">
-      Публичный просмотр. Доступ можно отозвать в панели оператора.
-    </div>
-  </div>
-</body>
-</html>"""
 
 
 @public_router.get("/s/{share_token}", response_class=HTMLResponse)
-def public_ticket(share_token: str):
-    """
-    Публичный просмотр обращения по токену. Без авторизации.
-    404 с человеческим текстом, если токен не найден или отключён.
-    """
+def public_view(share_token: str) -> HTMLResponse:
+    """Просмотр обращения по ссылке. Доступ выключили — ссылка перестаёт работать."""
+    from db.models import Ticket
+
     db = repo.get_session()
     try:
-        # Ищем тикет по share_token. Если repo не умеет — перебираем через list.
-        ticket = None
-        finder = getattr(repo, "get_by_share_token", None)
-        if callable(finder):
-            ticket = finder(db, share_token)
-        else:
-            for t in repo.list_tickets(db, limit=10000):
-                if getattr(t, "share_token", None) == share_token:
-                    ticket = t
-                    break
+        t = db.query(Ticket).filter(Ticket.share_token == share_token).first()
+        if t is None:
+            raise HTTPException(status_code=404,
+                                detail="Ссылка недействительна или доступ закрыт")
 
-        if ticket is None:
-            return HTMLResponse(
-                status_code=404,
-                content=_not_found_page("Ссылка не найдена или была отключена."),
-            )
+        def esc(x: object) -> str:
+            return (str(x).replace("&", "&amp;").replace("<", "&lt;")
+                    .replace(">", "&gt;").replace('"', "&quot;"))
 
-        card = _build_card(db, ticket)
-        return HTMLResponse(content=_render_public_card(card))
+        steps = json.loads(t.steps_json or "[]")
+        rows = "".join(
+            f'<div class="m m-{esc(m["role"])}">{esc(m["content"])}</div>'
+            for m in repo.history(db, t.id, limit=200)
+        )
+        html = f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Обращение {esc(t.id)}</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+ .wrap{{max-width:44rem;margin:0 auto;padding:2rem 1.25rem}}
+ .box{{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+      padding:1.5rem;box-shadow:var(--shadow);margin-bottom:1rem}}
+ .m{{padding:.625rem .875rem;border-radius:10px;margin-bottom:.5rem;max-width:85%}}
+ .m-user{{background:var(--accent);color:#fff;margin-left:auto}}
+ .m-assistant{{background:var(--bg);border:1px solid var(--border)}}
+ dt{{font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:700}}
+ dd{{margin:0 0 .75rem}}
+</style></head><body><div class="wrap">
+<div class="box"><h1 style="margin:0 0 1rem;font-size:1.25rem">Обращение {esc(t.id)}</h1>
+<dl><dt>Категория</dt><dd>{esc(t.category or "—")}</dd>
+<dt>Проблема</dt><dd>{esc(t.problem_summary or "—")}</dd>
+<dt>Результат</dt><dd>{esc(t.resolution or "в работе")}</dd>
+<dt>Выполненные шаги</dt><dd>{esc("; ".join(steps)) or "—"}</dd></dl></div>
+<div class="box"><h2 style="margin:0 0 1rem;font-size:1rem">Переписка</h2>{rows}</div>
+<p style="text-align:center;color:var(--text-muted);font-size:.8125rem">
+Ссылка выдана оператором поддержки и может быть отозвана</p>
+</div></body></html>"""
+        return HTMLResponse(html)
     finally:
         db.close()
 
 
-def _not_found_page(message: str) -> str:
-    """Человеческая 404-страница вместо трейсбека."""
-    return f"""<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <title>404 — не найдено</title>
-  <style>
-    body {{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-           background:#FAFAFA; display:grid; place-items:center; min-height:100vh;
-           margin:0; padding:24px; color:#1A1A1A; }}
-    .card {{ background:#fff; border-radius:12px; padding:32px; max-width:480px;
-            box-shadow:0 2px 12px rgba(0,0,0,.06); text-align:center; }}
-    h1 {{ margin:0 0 8px; font-size:20px; }}
-    p {{ color:#5A5A5A; line-height:1.5; margin:0; }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Ссылка недоступна</h1>
-    <p>{html.escape(message)}</p>
-  </div>
-</body>
-</html>"""
-
-
-# ---------------------------------------------------------------- вебхук
-
-def send_webhook(card: TicketCard) -> bool:
-    """
-    POST карточки на URL из переменной WEBHOOK_URL.
-
-    - таймаут 5 секунд;
-    - ошибки НЕ пробрасываются наружу — интеграция не должна ронять
-      основной сценарий;
-    - возвращает True при успехе, False при любой ошибке.
-
-    Тимлид вызывает эту функцию при эскалации обращения.
-    """
-    url = os.environ.get("WEBHOOK_URL")
+def send_webhook(card) -> None:
+    """Отправить карточку во внешнюю систему. Ошибки наружу не пробрасываются."""
+    url = os.getenv("WEBHOOK_URL", "").strip()
     if not url:
-        # Переменная не задана — просто ничего не делаем.
-        return False
+        return
+    import requests
 
-    try:
-        payload = _card_to_dict(card)
-        with httpx.Client(timeout=5.0) as client:
-            r = client.post(url, json=payload,
-                            headers={"Content-Type": "application/json"})
-            return 200 <= r.status_code < 300
-    except Exception:
-        # Никаких raise — вебхук не должен ломать сценарий.
-        return False
+    payload = card.model_dump() if hasattr(card, "model_dump") else dict(card)
+    requests.post(url, json=payload, timeout=5)
+    log.info("карточка %s отправлена на вебхук", payload.get("ticket_id"))
