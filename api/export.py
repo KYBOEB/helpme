@@ -34,7 +34,7 @@ from pydantic import BaseModel
 
 from common.models import TicketCard
 from db import repo
-from security import check_owner  # проверка владения токеном (404 при провале)
+from core.security import check_owner  # проверка владения токеном (404 при провале)
 
 
 # ---------------------------------------------------------------- роутеры
