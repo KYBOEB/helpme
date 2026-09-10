@@ -23,6 +23,8 @@ _NEW_COLUMNS = {
         "assist_used": "BOOLEAN DEFAULT 0",
         "operator_taken": "BOOLEAN DEFAULT 0",
         "share_token": "VARCHAR(64)",
+        "out_of_scope": "BOOLEAN DEFAULT 0",
+        "offtopic_count": "INTEGER DEFAULT 0",
     },
 }
 
@@ -71,6 +73,30 @@ def history(db: Session, ticket_id: str, limit: int = 10) -> list[dict]:
             .order_by(Message.created_at.desc()).limit(limit))
     rows = list(db.scalars(stmt))[::-1]
     return [{"role": m.role, "content": m.content} for m in rows]
+
+
+def messages_after(db: Session, ticket_id: str, after_id: int,
+                   roles: tuple[str, ...] = ("operator",),
+                   limit: int = 50) -> list[dict]:
+    """Сообщения обращения с id больше указанного.
+
+    Нужна странице чата: пока обращение у живого специалиста, браузер
+    подтягивает его реплики, не трогая конечный автомат диалога.
+    """
+    stmt = (select(Message)
+            .where(Message.ticket_id == ticket_id,
+                   Message.id > after_id,
+                   Message.role.in_(roles))
+            .order_by(Message.id.asc())
+            .limit(max(1, min(limit, 200))))
+    return [{"id": m.id, "role": m.role, "content": m.content,
+             "created_at": m.created_at.isoformat()} for m in db.scalars(stmt)]
+
+
+def last_message_id(db: Session, ticket_id: str) -> int:
+    stmt = (select(Message.id).where(Message.ticket_id == ticket_id)
+            .order_by(Message.id.desc()).limit(1))
+    return db.scalars(stmt).first() or 0
 
 
 def slots_dict(db: Session, ticket_id: str) -> dict[str, str]:

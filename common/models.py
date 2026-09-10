@@ -67,7 +67,11 @@ class RouteResult(BaseModel):
     problem_summary: str = ""
     filled_slots: dict[str, str] = Field(default_factory=dict)
     missing_slots: list[str] = Field(default_factory=list)
+    # Обращение не относится к технической поддержке: бытовой/медицинский вопрос,
+    # оскорбления, набор символов. Такое обращение закрывается, а не уходит человеку.
     is_out_of_scope: bool = False
+    # "off_topic" | "abuse" | "nonsense" | "" — нормализуется в llm/router.py
+    off_topic_kind: str = ""
 
 
 class AnswerResult(BaseModel):
@@ -90,7 +94,9 @@ class ChatRequest(BaseModel):
 
 
 class Reply(BaseModel):
-    type: Literal["question", "steps", "summary", "escalation", "choice", "error"]
+    # "closed" — обращение закрыто системой как нецелевое: специалиста не зовём.
+    type: Literal["question", "steps", "summary", "escalation", "choice",
+                  "error", "closed", "operator"]
     text: str
     quick_replies: list[str] = Field(default_factory=list)
     steps: list[str] = Field(default_factory=list)
@@ -108,6 +114,7 @@ class TicketCard(BaseModel):
     steps_done: list[str] = Field(default_factory=list)
     resolved_by_bot: bool = False
     needs_specialist: bool = False
+    out_of_scope: bool = False
     article_id: Optional[str] = None
     created_at: str = ""
 
@@ -118,6 +125,9 @@ class ChatResponse(BaseModel):
     state: Literal["NEW", "CLASSIFYING", "CLARIFYING", "SOLVING",
                    "VERIFYING", "RESOLVED", "ESCALATED"]
     category: Optional[str] = None
+    # Уверенность в ПОДОБРАННОЙ СТАТЬЕ базы знаний, а не «в ответе вообще».
+    # Если статья не найдена, значение равно 0.0 и интерфейс не показывает его:
+    # показывать «90 %» рядом с ответом, которого нет в базе, было бы враньём.
     confidence: float = 0.0
     article: Optional[dict] = None        # {"id": "...", "title": "..."}
     reply: Reply

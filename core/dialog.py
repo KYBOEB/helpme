@@ -72,6 +72,7 @@ def _card(db: Session, ticket: Ticket) -> TicketCard:
         steps_done=json.loads(ticket.steps_json or "[]"),
         resolved_by_bot=ticket.resolved_by_bot,
         needs_specialist=ticket.needs_specialist,
+        out_of_scope=bool(ticket.out_of_scope),
         article_id=art.id if art else None,
         created_at=ticket.created_at.isoformat(),
     )
@@ -126,8 +127,6 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
             "Стандартные шаги не помогли — значит случай нетиповой.",
         "рекомендации не помогли":
             "Ни инструкция из базы, ни общие рекомендации не помогли.",
-        "обращение вне тематики технической поддержки":
-            "Этот вопрос выходит за рамки технической поддержки.",
         "пользователь запросил специалиста": "Конечно.",
     }.get(reason, "Передаю обращение специалисту.")
 
@@ -137,6 +136,88 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
             f"номер — {ticket.id}. Категорию, ваши ответы и выполненные шаги "
             f"он уже видит, объяснять заново ничего не нужно.")
     return _respond(db, ticket, Reply(type="escalation", text=text), with_card=True)
+
+
+# ---------------------------------------------------------- нецелевые обращения
+
+# Тексты первого предупреждения. Отвечаем спокойно и по делу: пользователь мог
+# просто ошибиться окном, а не издеваться.
+_WARN_TEXT = {
+    "off_topic": (
+        "Я виртуальный помощник технической поддержки и решаю только вопросы, "
+        "связанные с рабочим компьютером, программами, доступами, почтой, "
+        "VPN, Wi-Fi и оборудованием. С этим вопросом я помочь не смогу.\n\n"
+        "Если у вас есть проблема из этих тем — опишите её, и я подключусь."),
+    "abuse": (
+        "Давайте общаться уважительно — так я смогу быть полезным.\n\n"
+        "Опишите, пожалуйста, что именно не работает, и я помогу."),
+    "nonsense": (
+        "Не смог разобрать сообщение. Опишите проблему словами: "
+        "что вы делали, что произошло и какой текст ошибки видите."),
+}
+
+_CLOSE_TEXT = {
+    "off_topic": ("Обращение закрыто: вопрос не относится к технической поддержке. "
+                  "Специалиста я по нему не вызываю. "
+                  "Если появится ИТ-проблема — начните новое обращение."),
+    "abuse": ("Обращение закрыто: продолжать диалог в таком тоне я не буду. "
+              "Когда понадобится помощь по работе техники — начните новое обращение."),
+    "nonsense": ("Обращение закрыто: описания проблемы так и не поступило. "
+                 "Начните новое обращение и опишите, что именно не работает."),
+}
+
+_MAX_OFFTOPIC = int(os.getenv("MAX_OFFTOPIC_MESSAGES", "2"))
+
+
+def _looks_like_nonsense(text: str) -> bool:
+    """Грубая локальная проверка на бессмыслицу.
+
+    Нужна как страховка: работает без модели и в DEMO_MODE. Намеренно узкая —
+    ложное срабатывание на живом пользователе хуже, чем пропуск одного тролля.
+    """
+    t = text.strip()
+    if len(t) < 3:
+        return False
+    letters = [c for c in t if c.isalpha()]
+    if not letters:                       # «!!!!!!», «12345», «))))»
+        return True
+    if len(set(c.lower() for c in letters)) == 1 and len(letters) >= 5:
+        return True                       # «ааааааа», «ggggggg»
+    return False
+
+
+def _out_of_scope(db: Session, ticket: Ticket, kind: str) -> ChatResponse:
+    """Обращение не про техподдержку.
+
+    Первое такое сообщение — предупреждение с объяснением, что мы умеем.
+    Второе подряд — закрытие. Специалиста не зовём: занимать живого человека
+    молочными зубами и оскорблениями нельзя, а именно это делала бы эскалация.
+    """
+    kind = kind if kind in _WARN_TEXT else "off_topic"
+    ticket.offtopic_count = (ticket.offtopic_count or 0) + 1
+    if ticket.article_id is None:
+        # Подобранной статьи нет — стирать нечего и незачем оставлять
+        # категорию, выведенную из нецелевого сообщения.
+        ticket.category = "не определено"
+        ticket.confidence = 0.0
+    repo.log_event(db, ticket.id, "out_of_scope",
+                   {"kind": kind, "count": ticket.offtopic_count})
+
+    if ticket.offtopic_count < _MAX_OFFTOPIC:
+        # Возвращаем обращение к началу, только если диалог ещё не начался.
+        # Иначе пользователь потерял бы уже отвеченные уточняющие вопросы.
+        if ticket.state in ("NEW", "CLASSIFYING"):
+            ticket.state = "NEW"
+        return _respond(db, ticket, Reply(type="question", text=_WARN_TEXT[kind]))
+
+    ticket.state = "RESOLVED"
+    ticket.out_of_scope = True
+    ticket.resolved_by_bot = False
+    ticket.needs_specialist = False       # в очередь к специалисту НЕ попадает
+    ticket.resolution = f"закрыто автоматически: вне тематики ({kind})"
+    repo.log_event(db, ticket.id, "closed_out_of_scope", {"kind": kind})
+    return _respond(db, ticket, Reply(type="closed", text=_CLOSE_TEXT[kind]),
+                    with_card=True)
 
 
 def _assist(db: Session, ticket: Ticket, user_text: str,
@@ -232,6 +313,11 @@ def _ask_slot(db: Session, ticket: Ticket, key: str) -> ChatResponse:
 
 def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     """Найти кандидатов, спросить модель, решить что делать дальше."""
+    # Локальная страховка до обращения к модели: бессмыслицу видно и без ИИ,
+    # а лишний вызов модели на «asdfgh» — потраченные деньги и время.
+    if _looks_like_nonsense(user_text):
+        return _out_of_scope(db, ticket, "nonsense")
+
     hits = _retriever.search(user_text, top_k=5)
     candidates = [a for a, _ in hits]
     known = repo.slots_dict(db, ticket.id)
@@ -247,12 +333,22 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
 
     result = demo_cache.cached_route(safe_text, safe_hist, candidates, safe_known)
 
+    # Отсев нецелевых обращений идёт ДО записи категории: иначе в карточке
+    # осталась бы выдуманная категория и уверенность по вопросу про зубы.
+    if result.is_out_of_scope:
+        if result.problem_summary:
+            ticket.problem_summary = result.problem_summary
+        return _out_of_scope(db, ticket, result.off_topic_kind)
+
     # Постобработка: модель не может назвать статью, которой не было среди кандидатов
     allowed = {a.id for a in candidates}
     article_id = result.article_id if result.article_id in allowed else None
 
     ticket.category = result.category
-    ticket.confidence = max(0.0, min(1.0, result.confidence))
+    # confidence = уверенность в ПОДОБРАННОЙ СТАТЬЕ. Статьи нет — уверенности нет.
+    # Раньше сюда попадала уверенность модели в категории, и обращение без решения
+    # показывало в панели «90 %», хотя показывать было нечего.
+    ticket.confidence = (max(0.0, min(1.0, result.confidence)) if article_id else 0.0)
     ticket.article_id = article_id
     if result.problem_summary:
         ticket.problem_summary = result.problem_summary
@@ -262,9 +358,6 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     repo.log_event(db, ticket.id, "classified",
                    {"category": ticket.category, "confidence": ticket.confidence,
                     "article_id": article_id})
-
-    if result.is_out_of_scope:
-        return _escalate(db, ticket, "обращение вне тематики технической поддержки")
 
     if article_id is None:
         return _assist(db, ticket, user_text)
@@ -364,7 +457,33 @@ def handle(db: Session, req: ChatRequest, client_key: str) -> ChatResponse:
     repo.add_message(db, ticket.id, "user", text)
     ticket.user_actions_count += 1
 
-    # 3. Ветвление по состоянию — единственное место, где оно меняется
+    # 3. Обращение уже у живого специалиста: бот не вмешивается в их переписку,
+    #    только принимает реплику пользователя и подтверждает получение.
+    if ticket.state == "ESCALATED":
+        repo.log_event(db, ticket.id, "user_msg_to_operator")
+        response = ChatResponse(
+            ticket_id=ticket.id, token=ticket.token, state=ticket.state,
+            category=ticket.category, confidence=ticket.confidence,
+            article=None,
+            reply=Reply(type="operator",
+                        text="Сообщение передано специалисту — он ответит здесь же."),
+            user_actions_count=ticket.user_actions_count,
+        )
+        repo.save_idempotent(db, req.request_id, ticket.id,
+                             response.model_dump_json())
+        db.commit()
+        return response
+
+    # 4. Явная бессмыслица на любом шаге, пока проблема ещё не определена.
+    #    Когда статья уже подобрана, диалог реальный — там короткий невнятный
+    #    ответ разбирает обычная ветка, и обрывать работу из-за него нельзя.
+    if ticket.article_id is None and _looks_like_nonsense(text):
+        response = _out_of_scope(db, ticket, "nonsense")
+        repo.save_idempotent(db, req.request_id, ticket.id, response.model_dump_json())
+        db.commit()
+        return response
+
+    # 5. Ветвление по состоянию — единственное место, где оно меняется
     if ticket.state == "CLARIFYING" and ticket.pending_slot:
         repo.set_slot(db, ticket.id, ticket.pending_slot, text)
         ticket.pending_slot = None
@@ -381,7 +500,7 @@ def handle(db: Session, req: ChatRequest, client_key: str) -> ChatResponse:
     else:
         response = _classify(db, ticket, text)
 
-    # 4. Фиксируем результат под этим request_id
+    # 6. Фиксируем результат под этим request_id
     repo.save_idempotent(db, req.request_id, ticket.id,
                          response.model_dump_json())
     db.commit()

@@ -52,7 +52,8 @@
           <table class="tickets-table">
             <thead>
               <tr>
-                <th>№</th><th>Время</th><th>Категория</th><th>Уверенность</th>
+                <th>№</th><th>Время</th><th>Категория</th>
+                <th title="Уверенность в подобранной статье базы знаний. Статьи нет — значения нет.">Уверенность в статье</th>
                 <th>Статус</th><th>Действий</th><th>Оценка</th>
               </tr>
             </thead>
@@ -114,6 +115,12 @@
             <h3>Точность классификации</h3>
             <div class="stat-value" id="metric-accuracy">—</div>
             <p class="muted">по результатам регресс-прогона</p>
+          </div>
+
+          <div class="card">
+            <h3>Отсеяно нецелевых</h3>
+            <div class="stat-value" id="metric-out-of-scope">—</div>
+            <p class="muted">закрыты автоматически, специалиста не заняли</p>
           </div>
         </div>
       </section>
@@ -203,6 +210,9 @@
         <button id="drawer-close" class="btn-ghost" aria-label="Закрыть">×</button>
       </div>
       <div class="drawer-body" id="drawer-body"></div>
+      <!-- Ответ пользователю — отдельной полосой, чтобы форма не уезжала
+           за пределы экрана в длинной переписке -->
+      <div class="drawer-reply" id="drawer-reply"></div>
       <div class="drawer-foot">
         <button id="btn-download-json" class="btn">Скачать JSON</button>
         <label class="switch">

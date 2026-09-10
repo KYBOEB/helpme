@@ -27,7 +27,7 @@ public_router = APIRouter(tags=["public"])
 CSV_COLUMNS = [
     "ticket_id", "created_at", "state", "category", "article_id", "confidence",
     "problem_summary", "resolved_by_bot", "needs_specialist", "assist_used",
-    "user_actions_count", "rating",
+    "out_of_scope", "user_actions_count", "rating",
 ]
 
 
@@ -44,6 +44,7 @@ def export_csv() -> StreamingResponse:
                 t.id, t.created_at.isoformat(), t.state, t.category or "",
                 t.article_id or "", round(t.confidence, 2), t.problem_summary,
                 int(t.resolved_by_bot), int(t.needs_specialist), int(t.assist_used),
+                int(bool(t.out_of_scope)),
                 t.user_actions_count, t.rating if t.rating is not None else "",
             ])
         data = "\ufeff" + buf.getvalue()
@@ -70,6 +71,7 @@ def _card_dict(db, t) -> dict:
         "resolved_by_bot": t.resolved_by_bot,
         "needs_specialist": t.needs_specialist,
         "assist_used": t.assist_used,
+        "out_of_scope": bool(t.out_of_scope),
         "resolution": t.resolution,
         "messages": repo.history(db, t.id, limit=200),
     }

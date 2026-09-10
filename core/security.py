@@ -45,6 +45,11 @@ ACCEPTS_INPUT = {"NEW", "CLASSIFYING", "CLARIFYING", "SOLVING", "VERIFYING"}
 
 
 def assert_can_accept(ticket) -> None:
+    # ESCALATED — обращение у живого специалиста. Молчать в ответ на сообщение
+    # пользователя здесь было бы хамством: реплику принимаем и кладём в переписку,
+    # которую специалист видит в панели. Автомат при этом не запускается.
+    if ticket.state == "ESCALATED":
+        return
     if ticket.state not in ACCEPTS_INPUT:
         raise HTTPException(
             status_code=409,
@@ -59,12 +64,12 @@ _MAX_REQUESTS = 30
 _hits: dict[str, deque] = defaultdict(deque)
 
 
-def rate_limit(key: str) -> None:
+def rate_limit(key: str, max_requests: int = _MAX_REQUESTS) -> None:
     now = time.monotonic()
     q = _hits[key]
     while q and now - q[0] > _WINDOW_SECONDS:
         q.popleft()
-    if len(q) >= _MAX_REQUESTS:
+    if len(q) >= max_requests:
         raise HTTPException(status_code=429,
                             detail="Слишком много сообщений подряд. Подождите немного.")
     q.append(now)

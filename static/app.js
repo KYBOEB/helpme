@@ -41,8 +41,15 @@ const ERROR_TEXT = {
   default: "Что-то пошло не так. Повторите запрос.",
 };
 
-// Логотип-аватар помощника: спасательный круг (инлайновый SVG, без внешних файлов)
-const ICON_BOT = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M5.64 5.64l3.53 3.53M14.83 14.83l3.53 3.53M14.83 9.17l3.53-3.53M9.17 14.83l-3.53 3.53"/></svg>`;
+// Аватар помощника — буква «А» (Актион). Без внешних файлов и шрифтов:
+// одна буква читается на любом экране лучше, чем мелкая иконка.
+const ICON_BOT = `<span class="avatar-letter">А</span>`;
+
+// Аватар живого специалиста, чтобы его реплики не путались с ответами бота
+const ICON_OPERATOR = `<span class="avatar-letter">С</span>`;
+
+// Опрос новых реплик специалиста, пока обращение у человека
+const POLL_INTERVAL_MS = 6000;
 
 // ---------- Состояние ----------
 
@@ -51,6 +58,8 @@ const state = {
   token: null,
   busy: false,
   conv: 0, // номер диалога: ответы на запросы из прошлого диалога не отрисовываются
+  pollTimer: null,  // опрос реплик специалиста
+  lastMsgId: 0,     // последнее показанное сообщение переписки
 };
 
 // ---------- DOM ----------
@@ -162,6 +171,9 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
   try {
     if (afterReply) afterReply(data);
     render(data, payload);
+    // Обращение у человека — начинаем следить за его ответами
+    if (data.state === "ESCALATED") startPolling();
+    else if (data.state === "RESOLVED") stopPolling();
   } catch (e) {
     console.error("Не удалось отрисовать ответ", e, data);
     renderRequestError(new ApiError(-1, "render"), payload);
@@ -223,7 +235,9 @@ function render(data, payload) {
     case "choice":     return renderChoice(data);
     case "steps":      return renderSteps(data);
     case "summary":
-    case "escalation": return renderCard(data);
+    case "escalation":
+    case "closed":     return renderCard(data);
+    case "operator":   return renderOperatorAck(data);
     case "error":      return renderErrorReply(data, payload);
     default:
       console.warn("Неизвестный reply.type:", reply.type);
@@ -415,8 +429,19 @@ function renderCard(data) {
     resolved: "Проблема решена.",
     transferred: "Обращение передано специалисту.",
     unsolved: "К сожалению, рекомендации не помогли.",
+    closed: "Обращение закрыто.",
   };
   const msg = addBotMessage(reply.text || fallbackText[outcome]);
+
+  // Нецелевое обращение: карточку задачи не показываем — задачи не было.
+  // Оценку тоже не просим: оценивать здесь нечего.
+  if (outcome === "closed") {
+    const actions = el("div", "msg-actions card-actions");
+    actions.append(button("btn btn--primary", "Новое обращение", resetConversation));
+    msg.body.append(actions);
+    scrollToMessage(msg.row);
+    return;
+  }
 
   const resultEl = el("p", null, `Результат: ${resultText(data, outcome)}`);
   const draft = el("div", "card-draft");
@@ -437,6 +462,12 @@ function renderCard(data) {
     actions.append(button("btn btn--ghost", "Завершить обращение", resetConversation));
   }
 
+  // Обращение у человека — диалог продолжается здесь же, окно можно не закрывать
+  if (outcome === "transferred") {
+    status.textContent = "Можно продолжать писать здесь: ответ специалиста придёт в этот же чат.";
+    startPolling();
+  }
+
   if (outcome === "unsolved") {
     const escBtn = button("btn btn--primary", "Обратиться к специалисту", async () => {
       if (escBtn.disabled) return; // двойное нажатие
@@ -446,7 +477,8 @@ function renderCard(data) {
         await escalateTicket(ticketId);
         escBtn.remove();
         resultEl.textContent = "Результат: передано специалисту";
-        status.textContent = "Обращение передано специалисту — он увидит всё, что вы уже попробовали, и свяжется с вами.";
+        status.textContent = "Обращение передано специалисту — он увидит всё, что вы уже попробовали. Ответ придёт в этот же чат.";
+        startPolling();
       } catch (e) {
         escBtn.disabled = false;
         status.textContent = e.status === 429 ? ERROR_TEXT[429] : "Не удалось передать обращение. Попробуйте ещё раз.";
@@ -461,6 +493,8 @@ function renderCard(data) {
 
 function cardOutcome(data) {
   const card = data.ticket_card || {};
+  // Нецелевое обращение: закрыто системой, специалиста не звали.
+  if (data.reply?.type === "closed" || card.out_of_scope === true) return "closed";
   if (data.state === "RESOLVED") return "resolved";
   if (data.state === "ESCALATED") return "transferred";
   if (data.reply?.type === "summary" && card.needs_specialist !== true) return "resolved";
@@ -519,6 +553,76 @@ function rateTicket(ticketId, rating) {
   });
 }
 
+/* ==========================================================================
+   ЖИВОЙ СПЕЦИАЛИСТ
+   Обращение передано человеку. Бот в переписку не вмешивается: страница
+   раз в несколько секунд спрашивает сервер, не написал ли специалист.
+   ========================================================================== */
+
+// Подтверждение, что реплика пользователя ушла человеку
+function renderOperatorAck(data) {
+  const msg = addBotMessage(data.reply?.text || "Сообщение передано специалисту.");
+  scrollToMessage(msg.row);
+  startPolling();
+}
+
+function startPolling() {
+  if (state.pollTimer || !state.ticketId) return;
+  state.pollTimer = setInterval(pollOperator, POLL_INTERVAL_MS);
+  pollOperator();
+}
+
+function stopPolling() {
+  if (!state.pollTimer) return;
+  clearInterval(state.pollTimer);
+  state.pollTimer = null;
+}
+
+async function pollOperator() {
+  if (!state.ticketId || !state.token || MOCK) return stopPolling();
+  const conv = state.conv;
+
+  let data;
+  try {
+    data = await apiPost("/api/chat/updates", {
+      ticket_id: state.ticketId,
+      token: state.token,
+      after: state.lastMsgId,
+    });
+  } catch (e) {
+    // Сеть моргнула — молчим и пробуем на следующем тике. Обращение потеряно
+    // (404) или сервер закрыл доступ — прекращаем опрос, чтобы не долбиться.
+    if (e instanceof ApiError && (e.status === 404 || e.status === 409)) stopPolling();
+    return;
+  }
+
+  if (conv !== state.conv) return;         // пользователь уже ушёл на главную
+
+  if (typeof data.last_id === "number") state.lastMsgId = data.last_id;
+  for (const m of data.messages || []) {
+    addOperatorMessage(m.text);
+    if (typeof m.id === "number" && m.id > state.lastMsgId) state.lastMsgId = m.id;
+  }
+  if (data.state === "RESOLVED") stopPolling();
+}
+
+function addOperatorMessage(text) {
+  const row = el("div", "msg msg--bot msg--operator");
+  const avatar = el("div", "avatar");
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.innerHTML = ICON_OPERATOR;       // статичная строка, не данные
+
+  const body = el("div", "msg-body");
+  const bubble = el("div", "bubble");
+  bubble.append(el("p", "operator-label", "Специалист поддержки"));
+  bubble.append(el("p", "bubble-text", text));   // textContent — безопасно
+  body.append(bubble);
+
+  row.append(avatar, body);
+  feedEl.append(row);
+  scrollToMessage(row);
+}
+
 // Строка «Результат» в карточке. «Без специалиста» — только если бэкенд
 // явно поставил resolved_by_bot = true.
 function resultText(data, outcome) {
@@ -542,7 +646,7 @@ function renderRequestError(err, payload) {
   const text = ERROR_TEXT[status] || ERROR_TEXT[code] || ERROR_TEXT.default;
 
   if (status === 404 || status === 409) {
-    showError(text, { label: "Закрыть обращение", onClick: resetConversation });
+    showError(text, { label: "Новое обращение", onClick: resetConversation });
   } else if (status === 422) {
     showError(text, null); // повтор того же текста не поможет
   } else {
@@ -645,12 +749,14 @@ function retireActiveControls() {
 // Можно нажать и во время запроса: ответ старого диалога просто отбросится.
 function resetConversation() {
   state.conv++;
+  stopPolling();
   if (state.busy) {
     hideTyping();
     setBusy(false);
   }
   state.ticketId = null;
   state.token = null;
+  state.lastMsgId = 0;
   // Этап 4: очистить сохранённое обращение в localStorage
 
   feedEl.replaceChildren();

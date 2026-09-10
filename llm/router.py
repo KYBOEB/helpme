@@ -88,6 +88,20 @@ def route(user_text: str, history: list[dict], candidates: list[Article],
 
         result = RouteResult(**data)
 
+        # Нецелевое обращение: приводим вид ответа к каноническому, чтобы автомат
+        # не получил одновременно «вне тематики» и подобранную статью.
+        kind = str(result.off_topic_kind or "").strip().lower()
+        if kind not in ("off_topic", "abuse", "nonsense"):
+            kind = ""
+        if result.is_out_of_scope:
+            result.off_topic_kind = kind or "off_topic"
+            result.category = "не определено"
+            result.article_id = None
+            result.confidence = 0.0
+            result.missing_slots = []
+            return result
+        result.off_topic_kind = ""
+
         if result.category not in CATEGORIES:
             result.category = "не определено"
             result.confidence = 0.0

@@ -43,6 +43,11 @@ class Ticket(Base):
     assist_used: Mapped[bool] = mapped_column(Boolean, default=False)
     operator_taken: Mapped[bool] = mapped_column(Boolean, default=False)
     share_token: Mapped[str | None] = mapped_column(String(64), default=None)
+    # закрыто как нецелевое (не ИТ, оскорбления, бессмыслица) — специалиста не звали
+    out_of_scope: Mapped[bool] = mapped_column(Boolean, default=False)
+    # сколько раз подряд пришло нецелевое сообщение: первое — предупреждение,
+    # второе — закрытие. Один промах пользователя не должен стоить ему обращения.
+    offtopic_count: Mapped[int] = mapped_column(Integer, default=0)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="ticket",
                                                      cascade="all, delete-orphan")
@@ -55,7 +60,7 @@ class Message(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"))
-    role: Mapped[str] = mapped_column(String(16))          # user | assistant
+    role: Mapped[str] = mapped_column(String(16))          # user | assistant | operator
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 

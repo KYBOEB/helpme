@@ -27,6 +27,7 @@ def _brief(t) -> dict:
         "assist_used": t.assist_used,
         "operator_taken": t.operator_taken,
         "needs_specialist": t.needs_specialist,
+        "out_of_scope": bool(t.out_of_scope),
         "user_actions_count": t.user_actions_count,
         "rating": t.rating,
     }
@@ -57,6 +58,40 @@ def take(ticket_id: str) -> dict:
         repo.log_event(db, ticket_id, "operator_took")
         db.commit()
         return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/tickets/{ticket_id}/reply", dependencies=[Depends(require_operator)])
+def operator_reply(ticket_id: str, payload: dict = Body(...)) -> dict:
+    """Ответ специалиста пользователю прямо из панели.
+
+    С этого момента диалог ведёт человек: обращение помечается как взятое,
+    а бот в переписку больше не вмешивается — он только доставляет реплики.
+    """
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Текст ответа пуст")
+    if len(text) > 2000:
+        raise HTTPException(status_code=422, detail="Ответ длиннее 2000 символов")
+
+    db = repo.get_session()
+    try:
+        t = repo.get_ticket(db, ticket_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="Обращение не найдено")
+        if t.out_of_scope:
+            raise HTTPException(status_code=409,
+                                detail="Обращение закрыто как нецелевое")
+
+        repo.add_message(db, ticket_id, "operator", text)
+        t.state = "ESCALATED"
+        t.needs_specialist = True
+        t.operator_taken = True
+        t.resolved_by_bot = False
+        repo.log_event(db, ticket_id, "operator_reply", {"length": len(text)})
+        db.commit()
+        return {"ok": True, "ticket_id": ticket_id, "state": t.state}
     finally:
         db.close()
 
@@ -118,7 +153,11 @@ def stats() -> dict:
     db = repo.get_session()
     try:
         tickets = repo.list_tickets(db, limit=10000)
-        finished = [t for t in tickets if t.state in ("RESOLVED", "ESCALATED")]
+        rejected = [t for t in tickets if t.out_of_scope]
+        # Нецелевые обращения не участвуют в доле решённых: они не были задачами
+        # поддержки, и портить ими метрику так же нечестно, как ею хвастаться.
+        finished = [t for t in tickets
+                    if t.state in ("RESOLVED", "ESCALATED") and not t.out_of_scope]
         solved = [t for t in finished if t.resolved_by_bot]
         rated = [t.rating for t in tickets if t.rating]
         actions = [t.user_actions_count for t in solved]
@@ -141,6 +180,7 @@ def stats() -> dict:
             "waiting_operator": len([t for t in tickets
                                      if t.needs_specialist and not t.operator_taken]),
             "assist_used": len([t for t in tickets if t.assist_used]),
+            "out_of_scope": len(rejected),
             "resolved_by_bot_share": round(len(solved) / len(finished), 3) if finished else 0.0,
             "avg_user_actions": round(sum(actions) / len(actions), 2) if actions else 0.0,
             "by_category": dict(Counter(t.category for t in tickets if t.category)),

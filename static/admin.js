@@ -5,6 +5,7 @@ const API = {
   queue: "/api/tickets?queue=1",
   ticket: (id) => `/api/tickets/${id}`,
   take: (id) => `/api/tickets/${id}/take`,
+  reply: (id) => `/api/tickets/${id}/reply`,
   stats: "/api/stats",
   kbSearch: (q) => `/api/kb/search?q=${encodeURIComponent(q)}`,
   kbGaps: "/api/kb/gaps",
@@ -19,6 +20,7 @@ const state = {
   filtered: [],
   activeTicketId: null,
   activeTab: "tickets",
+  drawerTimer: null,   // автообновление открытой карточки
 };
 
 /* ---------- Сеть ---------- */
@@ -73,7 +75,17 @@ function pct(x) {
  * Статус обращения. Сервер отдаёт состояние автомата и флаги —
  * человеческую подпись собираем здесь.
  */
+/**
+ * Уверенность относится к ПОДОБРАННОЙ СТАТЬЕ базы знаний.
+ * Статьи нет — показывать нечего: «90 %» рядом с пустотой вводило бы в заблуждение.
+ */
+function confidenceText(t) {
+  if (t.out_of_scope) return "—";
+  return t.article_id ? pct(t.confidence) : "—";
+}
+
 function statusInfo(t) {
+  if (t.out_of_scope) return { text: "Закрыто: не по теме", cls: "badge--muted" };
   if (t.needs_specialist && !t.operator_taken) return { text: "Ждёт специалиста", cls: "badge--warn" };
   if (t.needs_specialist && t.operator_taken) return { text: "У специалиста", cls: "badge--info" };
   if (t.resolved_by_bot) return { text: "Решено ботом", cls: "badge--ok" };
@@ -170,7 +182,9 @@ function renderTickets() {
           ? [el("span", { class: "badge badge--warn", text: "нет в базе", title: "Решения в базе знаний не нашлось" })]
           : []),
       ]),
-      el("td", { text: t.confidence != null ? pct(t.confidence) : "—" }),
+      el("td", { text: confidenceText(t),
+                 title: t.article_id ? "Уверенность в подобранной статье базы знаний"
+                                     : "Статья в базе знаний не подобрана" }),
       el("td", {}, [el("span", { class: `badge ${s.cls}`, text: s.text })]),
       el("td", { text: String(t.user_actions_count ?? "—") }),
       el("td", { text: t.rating != null ? String(t.rating) : "—" }),
@@ -246,6 +260,7 @@ async function openDrawer(id) {
   const body = document.getElementById("drawer-body");
   document.getElementById("drawer-title").textContent = `Обращение ${id}`;
   body.innerHTML = '<p class="muted">Загрузка…</p>';
+  document.getElementById("drawer-reply").replaceChildren();
   drawer.classList.remove("hidden");
   drawer.setAttribute("aria-hidden", "false");
 
@@ -253,9 +268,33 @@ async function openDrawer(id) {
 
   try {
     renderDrawer(await apiGet(API.ticket(id)));
+    startDrawerRefresh(id);
   } catch {
     body.innerHTML = '<p class="muted">Не удалось загрузить карточку</p>';
   }
+}
+
+/* Пока панель открыта, подтягиваем ответы пользователя: специалист ведёт
+   диалог здесь и не должен жать F5, чтобы увидеть реплику. */
+const DRAWER_REFRESH_MS = 8000;
+
+function stopDrawerRefresh() {
+  if (state.drawerTimer) clearInterval(state.drawerTimer);
+  state.drawerTimer = null;
+}
+
+function startDrawerRefresh(id) {
+  stopDrawerRefresh();
+  state.drawerTimer = setInterval(async () => {
+    if (state.activeTicketId !== id) return stopDrawerRefresh();
+    // Не перерисовываем панель, пока специалист печатает ответ:
+    // иначе набранный текст пропал бы у него из-под рук.
+    const area = document.querySelector("#drawer-reply textarea");
+    if (area && (area.value.trim() || document.activeElement === area)) return;
+    try {
+      renderDrawer(await apiGet(API.ticket(id)));
+    } catch { /* сеть моргнула — попробуем на следующем тике */ }
+  }, DRAWER_REFRESH_MS);
 }
 
 function renderDrawer(card) {
@@ -268,12 +307,13 @@ function renderDrawer(card) {
   const rows = [
     ["Категория", card.category],
     ["Статья", card.article_id],
-    ["Уверенность", card.confidence != null ? pct(card.confidence) : "—"],
+    ["Уверенность в статье", confidenceText(card)],
     ["Статус", s.text],
     ["Действий пользователя", card.user_actions_count],
     ["Оценка", card.rating],
   ];
   if (card.assist_used) rows.push(["Источник ответа", "общая рекомендация, статьи в базе нет"]);
+  if (card.out_of_scope) rows.push(["Закрыто системой", "обращение вне тематики поддержки"]);
   for (const [label, value] of rows) {
     dl.append(el("dt", { text: label }), el("dd", { text: String(value ?? "—") }));
   }
@@ -297,12 +337,86 @@ function renderDrawer(card) {
   const log = el("div", { class: "dialog-log" });
   for (const m of card.messages ?? []) {
     // сервер отдаёт content, не text
-    log.append(el("div", {
-      class: m.role === "user" ? "msg msg-user" : "msg msg-bot",
-      text: m.content ?? "",
-    }));
+    const cls = m.role === "user" ? "msg msg-user"
+              : m.role === "operator" ? "msg msg-operator"
+              : "msg msg-bot";
+    log.append(el("div", { class: cls, text: m.content ?? "" }));
   }
   body.append(log);
+  log.scrollTop = log.scrollHeight;      // показываем последнюю реплику
+
+  const replyHost = document.getElementById("drawer-reply");
+  replyHost.replaceChildren(renderReplyBox(card));
+}
+
+/**
+ * Ответ специалиста пользователю прямо отсюда.
+ *
+ * Как только специалист написал, обращение считается взятым в работу, бот
+ * в переписку больше не вмешивается, а страница пользователя подхватывает
+ * реплику опросом — перезагружать её не нужно.
+ */
+function renderReplyBox(card) {
+  const wrap = el("div", { class: "reply-box" });
+  wrap.append(el("h3", { text: "Ответить пользователю" }));
+
+  if (card.out_of_scope) {
+    wrap.append(el("p", {
+      class: "reply-status",
+      text: "Обращение закрыто системой как нецелевое — отвечать по нему нельзя.",
+    }));
+    return wrap;
+  }
+
+  const area = el("textarea", {
+    rows: "3",
+    maxlength: "2000",
+    placeholder: "Текст ответа. Пользователь увидит его в своём чате.",
+  });
+  const btn = el("button", { class: "btn btn--primary", text: "Отправить ответ" });
+  const status = el("p", { class: "reply-status" });
+  status.setAttribute("role", "status");
+
+  async function submit() {
+    const text = area.value.trim();
+    if (!text) {
+      status.textContent = "Введите текст ответа.";
+      return;
+    }
+    btn.disabled = true;
+    area.disabled = true;
+    status.textContent = "Отправляем…";
+    try {
+      await apiPost(API.reply(card.ticket_id), { text });
+      area.value = "";
+      status.textContent = "Ответ отправлен — он уже виден пользователю.";
+      // Дописываем реплику в переписку сразу, не перерисовывая панель:
+      // так подтверждение об отправке остаётся на экране. Карточку
+      // целиком обновит автообновление через несколько секунд.
+      const log = document.querySelector("#drawer-body .dialog-log");
+      if (log) {
+        log.append(el("div", { class: "msg msg-operator", text }));
+        log.scrollTop = log.scrollHeight;
+      }
+    } catch (e) {
+      status.textContent = `Не удалось отправить: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+      area.disabled = false;
+    }
+  }
+
+  // Ctrl+Enter — привычная для операторов отправка, не мешает переносу строк
+  area.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      submit();
+    }
+  });
+  btn.addEventListener("click", submit);
+
+  wrap.append(area, el("div", { class: "reply-row" }, [btn, status]));
+  return wrap;
 }
 
 /* ---------- Кнопки боковой панели ---------- */
@@ -346,6 +460,8 @@ document.getElementById("drawer-close").addEventListener("click", () => {
   drawer.classList.add("hidden");
   drawer.setAttribute("aria-hidden", "true");
   state.activeTicketId = null;
+  document.getElementById("drawer-reply").replaceChildren();
+  stopDrawerRefresh();
 });
 
 /* ---------- Вкладка «Аналитика» ---------- */
@@ -392,6 +508,9 @@ function renderStats(s) {
       : "—";
   document.getElementById("metric-accuracy").textContent =
     s.classification_accuracy != null ? pct(s.classification_accuracy) : "—";
+
+  const oos = document.getElementById("metric-out-of-scope");
+  if (oos) oos.textContent = String(s.out_of_scope ?? 0);
 
   const waiting = document.getElementById("metric-waiting");
   if (waiting) waiting.textContent = String(s.waiting_operator ?? 0);

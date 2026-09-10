@@ -64,6 +64,11 @@ for i in $(seq 1 40); do
 done
 check "12. Поток из 40 запросов подряд"          "да" "$LIMITED"
 
+# 13-15. Ответ специалиста и чтение переписки — только для своих
+check "13. Ответ специалиста без входа в панель" 401 "$(code -X POST "$BASE/api/tickets/$TID/reply" -H 'Content-Type: application/json' -d '{"text":"ответ от чужого"}')"
+check "14. Чтение переписки с чужим токеном"     404 "$(code -X POST "$BASE/api/chat/updates" -H 'Content-Type: application/json' -d "{\"ticket_id\":\"$TID\",\"token\":\"s_подделка\",\"after\":0}")"
+check "15. Чтение переписки вообще без токена"   404 "$(code -X POST "$BASE/api/chat/updates" -H 'Content-Type: application/json' -d "{\"ticket_id\":\"$TID\",\"after\":0}")"
+
 echo "----------------------------------------------------------------------------------------"
 echo "ИТОГО: пройдено $PASS, провалено $FAIL"
 
