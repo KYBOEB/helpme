@@ -438,3 +438,139 @@
   .admin-body .analytics-grid { grid-template-columns: 1fr; }
   .admin-body .kb-results { grid-template-columns: 1fr; }
 }
+
+/* ---------- Добавлено вместе с вкладкой очереди ---------- */
+
+.admin-body .admin-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-body .admin-header-actions { display: flex; gap: 0.5rem; }
+
+.admin-body .btn-ghost-line {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color var(--dur), color var(--dur);
+}
+.admin-body .btn-ghost-line:hover { border-color: var(--accent); color: var(--accent); }
+
+.admin-body .tab-count {
+  display: inline-block;
+  min-width: 1.375rem;
+  margin-left: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-body .panel-note {
+  margin: 0 0 1rem;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+
+.admin-body .section-title {
+  margin: 2rem 0 0.5rem;
+  font-size: 1.0625rem;
+}
+.admin-body .section-title:first-of-type { margin-top: 0; }
+
+/* Очередь */
+
+.admin-body .queue-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.admin-body .queue-item {
+  padding: 1rem 1.125rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: border-color var(--dur);
+}
+.admin-body .queue-item:hover { border-color: var(--accent); }
+
+.admin-body .queue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.admin-body .queue-id {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.admin-body .queue-time { margin-left: auto; font-size: 0.8125rem; color: var(--text-muted); }
+
+.admin-body .queue-summary { margin: 0 0 0.75rem; }
+
+.admin-body .queue-actions { display: flex; gap: 0.5rem; }
+
+/* Пробелы базы знаний */
+
+.admin-body .gaps { display: flex; flex-direction: column; gap: 0.375rem; }
+
+.admin-body .gap-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9375rem;
+}
+
+.admin-body .gap-query { flex: 1 1 12rem; min-width: 0; }
+.admin-body .gap-time { font-size: 0.8125rem; color: var(--text-muted); }
+
+/* Боковая панель: содержимое */
+
+.admin-body .card-dl {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: 0.375rem 0.875rem;
+  margin: 0;
+}
+.admin-body .card-dl dt { margin: 0; font-size: 0.8125rem; color: var(--text-muted); }
+.admin-body .card-dl dd { margin: 0; overflow-wrap: anywhere; }
+
+.admin-body .drawer-steps { margin: 0; padding-left: 1.25rem; }
+.admin-body .drawer-steps li { margin-bottom: 0.25rem; }
+
+.admin-body .dialog-log { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.admin-body .dialog-log .msg {
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+.admin-body .dialog-log .msg-user { margin-left: auto; background: var(--accent); color: #fff; }
+.admin-body .dialog-log .msg-bot { background: var(--bg); border: 1px solid var(--border); }
+
+/* Бейджи внутри ячеек таблицы идут вторыми, нужен отступ */
+.admin-body .tickets-table td .badge { margin-left: 0.375rem; }

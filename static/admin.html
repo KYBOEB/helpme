@@ -4,16 +4,23 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Панель оператора — Помоги мне</title>
-    <!-- Никаких CDN. Только локальный style.css -->
+    <!-- Никаких CDN. Только локальные стили. -->
     <link rel="stylesheet" href="/static/style.css" />
     <link rel="stylesheet" href="/static/admin.css" />
   </head>
   <body class="admin-body">
     <header class="admin-header">
-      <h1>Панель оператора</h1>
+      <div class="admin-header-top">
+        <h1>Панель оператора</h1>
+        <div class="admin-header-actions">
+          <button id="btn-export-csv" class="btn-ghost-line">Выгрузить CSV</button>
+          <button id="btn-logout" class="btn-ghost-line">Выйти</button>
+        </div>
+      </div>
       <nav class="admin-tabs" role="tablist">
-        <button class="tab is-active" data-tab="tickets" role="tab">
-          Обращения
+        <button class="tab is-active" data-tab="tickets" role="tab">Обращения</button>
+        <button class="tab" data-tab="queue" role="tab">
+          Очередь <span class="tab-count" id="queue-count">0</span>
         </button>
         <button class="tab" data-tab="analytics" role="tab">Аналитика</button>
         <button class="tab" data-tab="kb" role="tab">База знаний</button>
@@ -24,14 +31,10 @@
       <!-- ===================== ВКЛАДКА 1: ОБРАЩЕНИЯ ===================== -->
       <section id="tab-tickets" class="tab-panel is-active" role="tabpanel">
         <div class="filters">
-          <label
-            >Категория
-            <select id="filter-category">
-              <option value="">Все</option>
-            </select>
+          <label>Категория
+            <select id="filter-category"><option value="">Все</option></select>
           </label>
-          <label
-            >Статус
+          <label>Статус
             <select id="filter-status">
               <option value="">Все</option>
               <option value="resolved_by_bot">Решено ботом</option>
@@ -39,13 +42,8 @@
               <option value="in_progress">В работе</option>
             </select>
           </label>
-          <label
-            >Поиск
-            <input
-              id="filter-search"
-              type="search"
-              placeholder="Текст обращения…"
-            />
+          <label>Поиск
+            <input id="filter-search" type="search" placeholder="Текст обращения…" />
           </label>
           <button id="btn-refresh" class="btn">Обновить</button>
         </div>
@@ -54,71 +52,64 @@
           <table class="tickets-table">
             <thead>
               <tr>
-                <th>№</th>
-                <th>Время</th>
-                <th>Категория</th>
-                <th>Уверенность</th>
-                <th>Статус</th>
-                <th>Действий</th>
-                <th>Оценка</th>
+                <th>№</th><th>Время</th><th>Категория</th><th>Уверенность</th>
+                <th>Статус</th><th>Действий</th><th>Оценка</th>
               </tr>
             </thead>
-            <tbody id="tickets-body">
-              <!-- заполняется из admin.js -->
-            </tbody>
+            <tbody id="tickets-body"></tbody>
           </table>
         </div>
 
         <p id="tickets-empty" class="empty hidden">Обращений не найдено</p>
       </section>
 
-      <!-- ===================== ВКЛАДКА 2: АНАЛИТИКА ===================== -->
+      <!-- ===================== ВКЛАДКА 2: ОЧЕРЕДЬ ===================== -->
+      <section id="tab-queue" class="tab-panel" role="tabpanel">
+        <p class="panel-note">
+          Обращения, которые ждут живого специалиста. Сверху — самые давние.
+        </p>
+        <div id="queue-list" class="queue-list"></div>
+      </section>
+
+      <!-- ===================== ВКЛАДКА 3: АНАЛИТИКА ===================== -->
       <section id="tab-analytics" class="tab-panel" role="tabpanel">
-        <!-- Главная цифра кейса -->
         <div class="hero-metric">
           <div class="hero-value" id="metric-actions">—</div>
-          <div class="hero-label">
-            среднее число действий пользователя до решения
-          </div>
-          <div class="hero-note">
-            Цель ТЗ: решение с минимальным количеством действий
-          </div>
+          <div class="hero-label">среднее число действий пользователя до решения</div>
+          <div class="hero-note">Цель ТЗ: решение с минимальным количеством действий</div>
         </div>
 
         <div class="analytics-grid">
-          <!-- Кольцевая диаграмма на conic-gradient -->
           <div class="card">
             <h3>Решено без специалиста</h3>
             <div class="donut" id="donut-resolved" style="--p: 0">
-              <div class="donut-hole">
-                <span id="donut-resolved-value">—</span>
-              </div>
+              <div class="donut-hole"><span id="donut-resolved-value">—</span></div>
             </div>
             <p class="muted" id="donut-resolved-caption">—</p>
           </div>
 
-          <!-- Горизонтальные полосы по категориям -->
           <div class="card">
             <h3>Распределение по категориям</h3>
-            <div id="category-bars" class="bars">
-              <!-- заполняется из admin.js -->
-            </div>
+            <div id="category-bars" class="bars"></div>
           </div>
 
-          <!-- Средняя оценка -->
+          <div class="card">
+            <h3>Ждут специалиста</h3>
+            <div class="stat-value" id="metric-waiting">—</div>
+            <p class="muted">обращений в очереди сейчас</p>
+          </div>
+
           <div class="card">
             <h3>Средняя оценка ответа</h3>
             <div class="stat-value" id="metric-rating">—</div>
             <p class="muted">Оценок: <span id="metric-rating-count">—</span></p>
           </div>
 
-          <!-- Среднее время до первого шага -->
           <div class="card">
             <h3>Время до первого шага решения</h3>
             <div class="stat-value" id="metric-first-step">—</div>
           </div>
 
-          <!-- Точность классификации -->
           <div class="card">
             <h3>Точность классификации</h3>
             <div class="stat-value" id="metric-accuracy">—</div>
@@ -127,36 +118,36 @@
         </div>
       </section>
 
-      <!-- ===================== ВКЛАДКА 3: БАЗА ЗНАНИЙ ===================== -->
+      <!-- ===================== ВКЛАДКА 4: БАЗА ЗНАНИЙ ===================== -->
       <section id="tab-kb" class="tab-panel" role="tabpanel">
+        <!-- Сюда участник D вставит форму добавления статьи.
+             Отправляет POST /api/kb/articles. Ничего вокруг не трогать. -->
+        <div id="kb-form-slot"></div>
+
+        <h2 class="section-title">Пробелы базы знаний</h2>
+        <p class="panel-note">
+          Обращения, для которых статьи не нашлось. Готовый список тем для новых карточек.
+        </p>
+        <div id="kb-gaps" class="gaps"></div>
+
+        <h2 class="section-title">Поиск по базе</h2>
         <div class="filters">
-          <label
-            >Поиск по базе
-            <input
-              id="kb-search"
-              type="search"
-              placeholder="Например: почта, VPN, пароль…"
-            />
+          <label>Запрос
+            <input id="kb-search" type="search" placeholder="Например: почта, VPN, пароль…" />
           </label>
           <button id="kb-btn" class="btn">Найти</button>
         </div>
-        <div id="kb-results" class="kb-results">
-          <!-- заполняется из admin.js -->
-        </div>
+        <div id="kb-results" class="kb-results"></div>
       </section>
     </main>
 
-    <!-- ===================== БОКОВАЯ ПАНЕЛЬ ОБРАЩЕНИЯ ===================== -->
+    <!-- ===================== БОКОВАЯ ПАНЕЛЬ ===================== -->
     <aside id="drawer" class="drawer hidden" aria-hidden="true">
       <div class="drawer-head">
         <h2 id="drawer-title">Обращение</h2>
-        <button id="drawer-close" class="btn-ghost" aria-label="Закрыть">
-          ×
-        </button>
+        <button id="drawer-close" class="btn-ghost" aria-label="Закрыть">×</button>
       </div>
-      <div class="drawer-body" id="drawer-body">
-        <!-- заполняется из admin.js -->
-      </div>
+      <div class="drawer-body" id="drawer-body"></div>
       <div class="drawer-foot">
         <button id="btn-download-json" class="btn">Скачать JSON</button>
         <label class="switch">
