@@ -181,8 +181,6 @@ _MAX_OFFTOPIC = int(os.getenv("MAX_OFFTOPIC_MESSAGES", "2"))
 
 # ------------------------------------------- просьба позвать специалиста
 
-SPECIALIST_QR = "Всё равно позвать специалиста"
-
 _SPECIALIST_RE = re.compile(r"специалист|оператор|живо(?:го|му) человек", re.I)
 
 # Служебные слова самой просьбы: если кроме них в сообщении ничего нет,
@@ -212,15 +210,31 @@ def _wants_specialist(text: str) -> bool:
 
 
 def _ask_to_describe(db: Session, ticket: Ticket) -> ChatResponse:
+    """Просьба позвать человека, в которой не описана проблема.
+
+    Специалиста отсюда не зовём: заявка без описания занимает его рабочее время
+    и всё равно начинается с вопроса «а что у вас не работает». Сначала
+    предлагаем помощь. Если она не подойдёт, обращение уйдёт человеку обычным
+    путём — из проверки результата.
+    """
+    first = not ticket.specialist_asked
     ticket.specialist_asked = True
     ticket.state = "NEW"
     repo.log_event(db, ticket.id, "specialist_requested_blank")
+
+    text = ("Большинство типовых проблем я решаю сам и быстрее, чем занятый "
+            "специалист. Опишите в двух словах, что не работает — а если "
+            "не справлюсь, передам обращение ему вместе со всей историей."
+            if first else
+            "Мне правда нужно знать, в чём проблема: без этого я не смогу "
+            "ни помочь, ни толком передать обращение. Напишите одной фразой, "
+            "что случилось, или выберите вариант ниже.")
+
     return _respond(db, ticket, Reply(
-        type="question",
-        text=("Специалиста позову — но сначала опишите в двух словах, что "
-              "не работает. Так он подключится, уже понимая ситуацию, "
-              "а возможно, я решу вопрос быстрее."),
-        quick_replies=[SPECIALIST_QR]))
+        type="question", text=text,
+        quick_replies=["Не подключается VPN",
+                       "Не подключается Wi-Fi",
+                       "Не печатает принтер"]))
 
 
 def _looks_like_nonsense(text: str) -> bool:
@@ -397,10 +411,6 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     # в поиск бессмысленно: искать нечего, а общие шаги вроде «перезагрузите
     # устройство» к неизвестной проблеме отношения не имеют.
     if _wants_specialist(user_text):
-        if ticket.specialist_asked:
-            ticket.problem_summary = (ticket.problem_summary
-                                      or "Пользователь просит специалиста")
-            return _escalate(db, ticket, "пользователь запросил специалиста")
         return _ask_to_describe(db, ticket)
 
     hits = _retriever.search(user_text, top_k=5)

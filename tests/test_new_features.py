@@ -272,13 +272,17 @@ tid10, tok10 = d["ticket_id"], d["token"]
 check("на просьбу о специалисте просим описать проблему",
       d["reply"]["type"] == "question" and d["state"] != "ESCALATED", str(d)[:200])
 check("общие шаги при этом не выдаются", not d["reply"].get("steps"), str(d["reply"])[:150])
-check("предложена кнопка позвать специалиста всё равно",
-      any("специалист" in q.lower() for q in d["reply"]["quick_replies"]),
+check("вместо эскалации предложены варианты помощи",
+      len(d["reply"]["quick_replies"]) >= 2
+      and not any("специалист" in q.lower() for q in d["reply"]["quick_replies"]),
       str(d["reply"]["quick_replies"]))
-d2 = chat(quick_reply=d["reply"]["quick_replies"][0],
+d2 = chat("специалиста позовите", ticket_id=tid10, token=tok10).json()
+check("повторная просьба тоже не зовёт специалиста сразу",
+      d2["state"] != "ESCALATED", str(d2["state"]))
+d3 = chat(quick_reply=d["reply"]["quick_replies"][0],
           ticket_id=tid10, token=tok10).json()
-check("по кнопке обращение уходит специалисту",
-      d2["state"] == "ESCALATED", str(d2["state"]))
+check("выбор варианта запускает обычный сценарий",
+      d3["reply"]["type"] in ("steps", "question", "choice"), str(d3["reply"])[:120])
 
 # описание проблемы вместе с просьбой обрабатывается как обычно
 d = chat("не работает VPN, позовите специалиста").json()
