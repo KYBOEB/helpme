@@ -1,5 +1,5 @@
 """
-КОНЕЧНЫЙ АВТОМАТ ДИАЛОГА — сердце системы. ВЛАДЕЛЕЦ: A (тимлид).
+Конечный автомат диалога.
 
     NEW → CLASSIFYING → CLARIFYING → SOLVING → VERIFYING → RESOLVED
               │             │                      │
@@ -141,9 +141,8 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
 
     _notify_external(db, ticket)
 
-    # Номер обращения пользователю не показываем: для него это лишний шум,
-    # он всё равно продолжает диалог в этом же окне. Номер нужен оператору
-    # и виден в панели, в выгрузке и в карточке для внешней системы.
+    # Номер обращения видит только оператор: пользователь продолжает диалог
+    # в этом же окне, и номер ему не нужен.
     text = (f"{intro} Передаю обращение специалисту поддержки. Категорию, ваши "
             f"ответы и выполненные шаги он уже видит, объяснять заново ничего "
             f"не нужно.").replace("  ", " ").strip()
@@ -152,8 +151,7 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
 
 # ---------------------------------------------------------- нецелевые обращения
 
-# Тексты первого предупреждения. Отвечаем спокойно и по делу: пользователь мог
-# просто ошибиться окном, а не издеваться.
+# Первое предупреждение: пользователь мог просто ошибиться окном.
 _WARN_TEXT = {
     "off_topic": (
         "Я виртуальный помощник технической поддержки и решаю только вопросы, "
@@ -187,9 +185,8 @@ SPECIALIST_QR = "Всё равно позвать специалиста"
 
 _SPECIALIST_RE = re.compile(r"специалист|оператор|живо(?:го|му) человек", re.I)
 
-# Служебные слова самой просьбы. Если кроме них в сообщении ничего нет,
-# значит проблему пользователь не описал — и предлагать ему общие шаги
-# «перезагрузите устройство» бессмысленно, мы не знаем, что у него не работает.
+# Служебные слова самой просьбы: если кроме них в сообщении ничего нет,
+# проблему пользователь не описал.
 _FILLER = {
     "я", "мне", "меня", "вы", "вызови", "вызовите", "позови", "позовите",
     "позвать", "вызвать", "соедини", "соедините", "переключи", "переключите",
@@ -253,8 +250,7 @@ def _out_of_scope(db: Session, ticket: Ticket, kind: str) -> ChatResponse:
     kind = kind if kind in _WARN_TEXT else "off_topic"
     ticket.offtopic_count = (ticket.offtopic_count or 0) + 1
     if ticket.article_id is None:
-        # Подобранной статьи нет — стирать нечего и незачем оставлять
-        # категорию, выведенную из нецелевого сообщения.
+        # Категорию, выведенную из нецелевого сообщения, не оставляем.
         ticket.category = "не определено"
         ticket.confidence = 0.0
     repo.log_event(db, ticket.id, "out_of_scope",
@@ -284,15 +280,12 @@ def _assist(db: Session, ticket: Ticket, user_text: str,
     Модель даёт общую рекомендацию, помеченную как совет ИИ-ассистента,
     а запрос записывается как пробел в базе — по нему потом напишут статью.
 
-    Специалиста здесь НЕ вызываем. Раньше вызывали сразу, и получалось
-    противоречие: система писала «обращение передано специалисту» и тут же
-    предлагала кнопку «Позвать специалиста». Человек подключается на третьем
-    уровне каскада — если и эти рекомендации не помогут.
+    Специалиста здесь не вызываем: человек подключается на третьем уровне
+    каскада, если и эти рекомендации не помогут.
     """
     safe_text, _ = redact(user_text)
-    # gap — статьи нет вовсе; insufficient — статья нашлась, но шаги не помогли.
-    # И то и другое стоит показать оператору: первое просит новую карточку,
-    # второе — доработать существующую.
+    # gap — статьи нет вовсе; insufficient — статья есть, но шаги не помогли.
+    # Первое просит новую карточку, второе — доработать существующую.
     repo.log_event(db, ticket.id,
                    "kb_gap" if reason == "gap" else "kb_insufficient",
                    {"query": safe_text[:300], "category": ticket.category,
@@ -307,15 +300,12 @@ def _assist(db: Session, ticket: Ticket, user_text: str,
     ticket.steps_json = json.dumps(answer.steps, ensure_ascii=False)
     repo.log_event(db, ticket.id, "assisted", {"steps": len(answer.steps)})
 
-    # Один текст, а не два подряд про одно и то же.
-    # При reason="insufficient" интерфейс уже показал строку «Рекомендации
-    # из базы знаний не помогли, сейчас ответит ИИ-ассистент» — повторять
-    # то же самое своими словами незачем, поэтому текста нет вовсе.
+    # При reason="insufficient" подводку уже показал интерфейс, повторять её
+    # своими словами незачем.
     text = (answer.text if reason == "gap" else "")
 
-    # Кнопки «Всё получилось» и «Проблема ещё не решена» рисует карточка шага.
-    # Отдельной кнопки «Позвать специалиста» здесь нет: человека зовём после
-    # того, как рекомендации не сработали, а не одновременно с ними.
+    # Кнопки исхода рисует карточка шага. Отдельной кнопки «Позвать специалиста»
+    # здесь нет: человека зовём после того, как рекомендации не сработали.
     return _respond(db, ticket, Reply(
         type="steps", text=text, steps=answer.steps, source="general"))
 
@@ -375,8 +365,7 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     """Найти кандидатов, спросить модель, решить что делать дальше."""
     text_key = user_text.strip().lower()
 
-    # Пользователь выбрал вариант кнопкой на экране уточнения. Он сам сказал,
-    # какая у него проблема — ни поиск, ни модель тут уже не нужны.
+    # Пользователь сам выбрал проблему кнопкой — ни поиск, ни модель не нужны.
     picked = _by_title.get(text_key)
     if picked is not None:
         ticket.category = picked.category
@@ -405,8 +394,8 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
         return _out_of_scope(db, ticket, "nonsense")
 
     # «Вызови специалиста» без описания проблемы. Отправлять такое обращение
-    # в поиск бессмысленно: искать нечего, и раньше сюда подставлялись
-    # случайные общие шаги вроде «перезагрузите устройство».
+    # в поиск бессмысленно: искать нечего, а общие шаги вроде «перезагрузите
+    # устройство» к неизвестной проблеме отношения не имеют.
     if _wants_specialist(user_text):
         if ticket.specialist_asked:
             ticket.problem_summary = (ticket.problem_summary
@@ -429,8 +418,7 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
 
     result = demo_cache.cached_route(safe_text, safe_hist, candidates, safe_known)
 
-    # Отсев нецелевых обращений идёт ДО записи категории: иначе в карточке
-    # осталась бы выдуманная категория и уверенность по вопросу про зубы.
+    # Отсев нецелевых идёт до записи категории, иначе она осталась бы в карточке.
     if result.is_out_of_scope:
         if result.problem_summary:
             ticket.problem_summary = result.problem_summary
@@ -441,9 +429,7 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     article_id = result.article_id if result.article_id in allowed else None
 
     ticket.category = result.category
-    # confidence = уверенность в ПОДОБРАННОЙ СТАТЬЕ. Статьи нет — уверенности нет.
-    # Раньше сюда попадала уверенность модели в категории, и обращение без решения
-    # показывало в панели «90 %», хотя показывать было нечего.
+    # Уверенность относится к подобранной статье. Статьи нет — уверенности нет.
     ticket.confidence = (max(0.0, min(1.0, result.confidence)) if article_id else 0.0)
     ticket.article_id = article_id
     if result.problem_summary:
@@ -458,10 +444,8 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     if article_id is None:
         return _assist(db, ticket, user_text)
 
-    # Уверенности не хватает — не гадаем, а показываем, что нашёл поиск.
-    # Раньше предлагались абстрактные категории («VPN», «оборудование»), и по
-    # ним пользователю было трудно понять, о чём речь. Теперь предлагаем
-    # конкретные проблемы — заголовки статей, — плюс «Другое», если мимо.
+    # Уверенности не хватает — не гадаем, а показываем, что нашёл поиск:
+    # конкретные проблемы заголовками статей плюс «Другое».
     if ticket.confidence < CONFIDENCE_THRESHOLD:
         ticket.state = "CLASSIFYING"
         options, seen = [], set()
@@ -490,6 +474,20 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     return _solve(db, ticket)
 
 
+def _summary(ticket: Ticket) -> str:
+    """Итог решённого обращения.
+
+    Собирается из данных обращения, а не генерируется моделью: здесь нужны
+    две точные строки, а не пересказ, который может оборваться на лимите токенов.
+    """
+    problem = (ticket.problem_summary or "").strip().rstrip(".")
+    head = f"Проблема решена: {problem}." if problem else "Проблема решена."
+    if ticket.assist_used:
+        return head + "\nРешение подсказал ИИ-ассистент — в базе знаний такой " \
+                      "инструкции пока нет. Обращаться к специалисту не нужно."
+    return head + "\nОбращаться к специалисту не нужно."
+
+
 def _verify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     """Пользователь сообщил, помогло или нет."""
     low = user_text.lower()
@@ -510,20 +508,16 @@ def _verify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
 
     if ok:
         ticket.state = "RESOLVED"
-        # Общая рекомендация не засчитывается как «решено ботом»: решения
-        # в базе знаний не было, и метрику этим завышать нечестно.
-        # Общая рекомендация не засчитывается как «решено ботом»: решения
-        # в базе знаний не было, и завышать метрику этим нечестно. Но и
-        # специалиста звать уже незачем — проблема решена.
+        # Совет ассистента не засчитывается как «решено ботом»: решения
+        # в базе знаний не было. Но и специалиста звать незачем — проблема решена.
         ticket.resolved_by_bot = not ticket.assist_used
         ticket.needs_specialist = False
         ticket.resolution = ("решено общей рекомендацией, статья в базе нужна"
                              if ticket.assist_used else "решено без специалиста")
         repo.log_event(db, ticket.id, "resolved",
                        {"actions": ticket.user_actions_count})
-        text = answerer.make_summary(_card(db, ticket))
-        # Карточку-плашку в чате больше не рисуем: итог целиком в тексте.
-        return _respond(db, ticket, Reply(type="summary", text=text), with_card=True)
+        return _respond(db, ticket, Reply(type="summary", text=_summary(ticket)),
+                        with_card=True)
 
     # Ответ непонятен — переспрашиваем один раз, не меняя состояния
     return _respond(db, ticket, Reply(
@@ -549,8 +543,10 @@ def handle(db: Session, req: ChatRequest, client_key: str) -> ChatResponse:
         ticket = Ticket(id=security.new_ticket_id(), token=security.new_token(),
                         public_no=repo.next_public_no(db))
         db.add(ticket)
-        db.flush()
         repo.log_event(db, ticket.id, "created")
+        # Фиксируем сразу: иначе запись держала бы базу заблокированной всё время
+        # запроса к внешней модели.
+        db.commit()
     else:
         ticket = repo.get_ticket(db, req.ticket_id)
         security.check_owner(ticket, req.token)
@@ -580,9 +576,8 @@ def handle(db: Session, req: ChatRequest, client_key: str) -> ChatResponse:
         db.commit()
         return response
 
-    # 4. Явная бессмыслица на любом шаге, пока проблема ещё не определена.
-    #    Когда статья уже подобрана, диалог реальный — там короткий невнятный
-    #    ответ разбирает обычная ветка, и обрывать работу из-за него нельзя.
+    # 4. Явная бессмыслица, пока проблема ещё не определена. Когда статья
+    #    подобрана, короткий невнятный ответ разбирает обычная ветка.
     if ticket.article_id is None and _looks_like_nonsense(text):
         response = _out_of_scope(db, ticket, "nonsense")
         repo.save_idempotent(db, req.request_id, ticket.id, response.model_dump_json())

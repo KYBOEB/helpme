@@ -1,10 +1,10 @@
-"""Доступ к данным. ВЛАДЕЛЕЦ: A."""
+"""Доступ к данным."""
 from __future__ import annotations
 
 import json
 import os
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from db.models import (Base, Event, Idempotency, Message, SlotValue, Ticket,
@@ -13,8 +13,28 @@ from db.models import (Base, Event, Idempotency, Message, SlotValue, Ticket,
 DB_PATH = os.getenv("DB_PATH", "data/helpme.db")
 os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
 
-engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+# timeout: сколько ждать освобождения базы. По умолчанию в SQLite это 5 секунд —
+# меньше, чем длится запрос к модели, поэтому при одновременных обращениях
+# второе падало бы с «database is locked».
+engine = create_engine(
+    f"sqlite:///{DB_PATH}",
+    connect_args={"check_same_thread": False, "timeout": 30},
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_connection, _record) -> None:
+    """Журнал упреждающей записи: читающие не блокируют пишущих и наоборот.
+
+    Иначе открытая панель оператора, которая опрашивает список обращений,
+    мешает завершить запись чата.
+    """
+    cur = dbapi_connection.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    cur.execute("PRAGMA busy_timeout=30000")
+    cur.close()
 
 
 # Колонки, добавленные после первого релиза. SQLite умеет ALTER TABLE ADD COLUMN,

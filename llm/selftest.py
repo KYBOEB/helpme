@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from common.models import Article, Slot
 from llm import client, router, answerer
-from common.models import Article, Slot, TicketCard
 
 def test_client() -> None:
     print("=== 1. Проверка клиента (chat) ===")
@@ -65,31 +64,16 @@ def test_answerer() -> None:
         print(" -", step)
     print()
 
-def test_clarify_and_summary() -> None:
+def test_clarify() -> None:
     print("=== 4. Проверка make_clarifying_question() ===")
     slot = Slot(key="os", question="Какая у вас операционная система?")
     question = answerer.make_clarifying_question(slot, "не могу подключиться к wifi")
     print(question)
     print()
 
-    print("=== 5. Проверка make_summary() ===")
-    card = TicketCard(
-        ticket_id="T-001",
-        category="Wi-Fi",
-        problem_summary="не подключается корпоративный Wi-Fi на ноутбуке",
-        slots={"os": "Windows"},
-        steps_done=["Забыли сеть", "Подключились заново"],
-        resolved_by_bot=True,
-        needs_specialist=False,
-        article_id="wifi-001",
-        created_at="2026-09-10",
-    )
-    summary = answerer.make_summary(card)
-    print(summary)
-    print()
 
 if __name__ == "__main__":
     test_client()
     test_router()
     test_answerer()
-    test_clarify_and_summary()
+    test_clarify()

@@ -89,21 +89,29 @@ SCENARIOS: list[dict] = [
 ]
 
 
-def post(base: str, path: str, payload: dict) -> dict:
-    req = urllib.request.Request(
-        base.rstrip("/") + path,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        return {"__http_error__": exc.code,
-                "__body__": exc.read().decode("utf-8", "replace")[:200]}
-    except Exception as exc:                                   # noqa: BLE001
-        return {"__error__": str(exc)}
+def post(base: str, path: str, payload: dict, retries: int = 2) -> dict:
+    """Отправить запрос. На временной ошибке сервера или сети пробует ещё раз."""
+    last: dict = {}
+    for attempt in range(retries + 1):
+        if attempt:
+            time.sleep(3 * attempt)
+        req = urllib.request.Request(
+            base.rstrip("/") + path,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")[:200]
+            last = {"__http_error__": exc.code, "__body__": body}
+            if exc.code not in (429, 500, 502, 503, 504):
+                return last
+        except Exception as exc:                               # noqa: BLE001
+            last = {"__error__": str(exc)}
+    return last
 
 
 def send(base: str, ticket_id, token, message=None, quick_reply=None) -> dict:

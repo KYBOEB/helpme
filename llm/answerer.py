@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 
-from common.models import AnswerResult, Article, Slot, TicketCard
+from common.models import AnswerResult, Article, Slot
 from llm import client, prompts
 
 log = logging.getLogger(__name__)
@@ -73,25 +73,3 @@ def make_clarifying_question(slot: Slot, problem_summary: str) -> str:
     )
     return raw.strip() if raw else slot.question
 
-
-def make_summary(card: TicketCard) -> str:
-    """Итог обращения: что за проблема, решена ли, что дальше, нужен ли специалист."""
-    status = "решена без специалиста" if card.resolved_by_bot else "передана специалисту"
-    fallback = f"Обращение по категории «{card.category}»: {card.problem_summary}. Проблема {status}."
-
-    raw = client.chat(
-        messages=[
-            {"role": "system", "content": prompts.SUMMARY_SYSTEM},
-            {"role": "user", "content": (
-                f"Категория: {card.category}\n"
-                f"Проблема: {card.problem_summary}\n"
-                f"Решена ботом: {'да' if card.resolved_by_bot else 'нет'}\n"
-                f"Нужен специалист: {'да' if card.needs_specialist else 'нет'}\n"
-                f"Выполненные шаги: {card.steps_done or 'нет'}"
-            )},
-        ],
-        model=client.MODEL_FAST,
-        temperature=0.3,
-        max_tokens=300,
-    )
-    return raw.strip() if raw else fallback

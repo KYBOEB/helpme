@@ -1,26 +1,16 @@
 "use strict";
 
-/* ==========================================================================
-   «Помоги мне» — страница чата
-   Этап 1: моки + каркас + отрисовка question, choice и steps.
-   summary/escalation — временная заглушка, полноценная карточка
-   будет на этапе 2.
-   ========================================================================== */
+/* «Помоги мне» — страница чата пользователя. */
 
 // ---------- Настройки ----------
-
-const MOCK = false;  // переключается на false, когда бэкенд готов
 
 const API_CHAT = "/api/chat";
 const MAX_LEN = 2000;             // лимит длины сообщения
 const COUNTER_FROM = 1800;        // счётчик появляется после этого числа символов
 const REQUEST_TIMEOUT_MS = 20000; // дольше ждать нет смысла — показываем ошибку
 
-// Итог пошагового гида (решение тимлида): сервер присылает ВСЕ шаги сразу,
-// клиент показывает их по одному и отправляет на сервер ОДНО сообщение за весь гид.
-//   «Всё получилось» на любом шаге      → quick_reply "Получилось"
-//   «Проблема ещё не решена» на последнем → quick_reply "Не получилось"
-// Кем решена проблема (ботом или специалистом) — определяет бэкенд в ticket_card.
+// Сервер присылает все шаги сразу, клиент показывает их по одному и отправляет
+// на сервер одно сообщение за весь гид: переходы между шагами в сеть не ходят.
 const QR = {
   SOLVED: "Получилось",
   NOT_SOLVED: "Не получилось",
@@ -93,12 +83,6 @@ function init() {
   dockEl = document.getElementById("dock");
   backBtn = document.getElementById("back-btn");
   resumeEl = document.getElementById("resume");
-
-  // Режим моков виден только разработчику: во вкладке браузера и в консоли
-  if (MOCK) {
-    document.title = "[MOCK] " + document.title;
-    console.warn("Режим моков: ответы берутся из app.js. Перед защитой поставьте MOCK = false.");
-  }
 
   inputEl.maxLength = MAX_LEN;
   inputEl.addEventListener("input", onInput);
@@ -220,8 +204,6 @@ class ApiError extends Error {
 }
 
 async function apiPost(path, body) {
-  if (MOCK) return mockResponse(path, body);
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res;
@@ -287,7 +269,6 @@ function renderQuestion(data) {
   const { reply } = data;
   const msg = addBotMessage(reply.text);
   if (isGeneral(data)) markGeneral(msg);
-  // Этап 2: renderBadge(msg.body, data) — категория, уверенность, источник (4.4)
   renderQuickReplies(msg.body, reply.quick_replies);
   scrollToMessage(msg.row);
 }
@@ -435,7 +416,6 @@ function stepText(step) {
   return step?.text || step?.title || "";
 }
 
-// summary / escalation — ВРЕМЕННАЯ версия. Этап 2: карточка из 4 блоков (4.6).
 // Исход определяется только данными бэкенда:
 //   resolved    — state RESOLVED                      → [Новое обращение]
 //   transferred — state ESCALATED (уже у специалиста) → [Завершить обращение]
@@ -465,11 +445,9 @@ function renderCard(data) {
     return;
   }
 
-  // Карточки-плашки в чате нет: она дословно повторяла текст сообщения выше.
   // Всё, что должен понять пользователь — какая проблема, решена ли она,
-  // что дальше и нужен ли специалист — есть в самом тексте ответа.
-  // Полная карточка обращения формируется и живёт в панели оператора,
-  // выгружается в JSON и уходит вебхуком во внешнюю систему.
+  // что дальше и нужен ли специалист — есть в тексте ответа. Полная карточка
+  // обращения живёт в панели оператора, выгрузке и вебхуке.
   msg.body.append(renderRating(ticketId));
 
   const actions = el("div", "msg-actions card-actions");
@@ -571,7 +549,7 @@ function escalateTicket(ticketId) {
 // Без этого брошенное обращение продолжало висеть в панели как активное.
 // Ошибку глушим: уход пользователя не должен упираться в сеть.
 function closeTicket(ticketId, token) {
-  if (!ticketId || !token || MOCK) return;
+  if (!ticketId || !token) return;
   apiPost(`/api/tickets/${encodeURIComponent(ticketId)}/close`, { token })
     .catch(() => {});
 }
@@ -622,7 +600,7 @@ function clearSaved() {
 }
 
 function offerResume() {
-  if (MOCK || !loadSaved()) return;
+  if (!loadSaved()) return;
   resumeEl.hidden = false;
 }
 
@@ -706,7 +684,7 @@ function stopPolling() {
 }
 
 async function pollOperator() {
-  if (!state.ticketId || !state.token || MOCK) return stopPolling();
+  if (!state.ticketId || !state.token) return stopPolling();
   const conv = state.conv;
 
   let data;
@@ -762,12 +740,6 @@ function addOperatorMessage(text) {
 
 // Строка «Результат» в карточке. «Без специалиста» — только если бэкенд
 // явно поставил resolved_by_bot = true.
-function resultText(data, outcome) {
-  if (outcome === "transferred") return "передано специалисту";
-  if (outcome === "unsolved") return "не решено — рекомендации не помогли";
-  return data.ticket_card?.resolved_by_bot === true ? "✓ решено без специалиста" : "✓ решено";
-}
-
 // reply.type === "error" — бэкенд ответил, но обработать не смог
 function renderErrorReply(data, payload) {
   showError(data.reply?.text || ERROR_TEXT.default, {
@@ -1032,285 +1004,4 @@ function uuid() {
   b[8] = (b[8] & 0x3f) | 0x80;
   const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-function randomHex(bytes) {
-  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (x) =>
-    x.toString(16).padStart(2, "0")
-  ).join("");
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/* ==========================================================================
-   МОКИ
-   --------------------------------------------------------------------------
-   Сценарии по первому сообщению:
-     «Wi-Fi», «VPN»     — вопрос → шаги из базы (source: "kb") одним ответом
-                          «Всё получилось» на любом шаге → "Получилось" → итог «решено»
-                          все шаги не помогли → "Не получилось" → общие рекомендации ИИ
-                          (source: "general", плашка, кнопка «Позвать специалиста»)
-                          общие тоже не помогли → «не решено»: [Завершить] [Обратиться к специалисту]
-                          Переходы между шагами на сервер не ходят.
-     «принтер»          — вопрос → 3 шага
-     «интернет», «сеть» — choice: Wi-Fi или VPN
-     «пароль»           — сразу передано специалисту (state ESCALATED)
-     любой другой текст — сразу общие рекомендации (source: "general")
-   Отладочные команды (ввести в поле):
-     /error   — reply.type = "error"
-     /429     — HTTP 429
-     /404     — HTTP 404
-     /offline — сеть недоступна
-     /slow    — ответ через 4 секунды
-     /long    — очень длинный ответ
-   Сообщение в закрытое обращение → HTTP 409.
-   ========================================================================== */
-
-const MOCK_SCENARIOS = {
-  wifi: {
-    category: "Wi-Fi",
-    confidence: 0.91,
-    article: { id: "KB-WIFI-002", title: "Подключение к corp-wifi" },
-    question: "На каком устройстве не подключается?",
-    options: ["Ноутбук Windows", "MacBook", "Телефон"],
-    slot: "device",
-    steps: [
-      "Проверьте, что Wi-Fi включён, а режим «В самолёте» выключен",
-      "Откройте список сетей, выберите corp-wifi и нажмите «Забыть сеть»",
-      "Подключитесь к corp-wifi заново и введите корпоративный логин и пароль",
-      "Если появится запрос сертификата — нажмите «Доверять» и подождите 10 секунд",
-    ],
-  },
-  vpn: {
-    category: "VPN",
-    confidence: 0.78,
-    article: { id: "KB-VPN-004", title: "Не подключается корпоративный VPN" },
-    question: "Что показывает VPN-клиент?",
-    options: ["Неверный логин или пароль", "Сервер недоступен", "Ошибки нет, но не подключается"],
-    slot: "vpn_error",
-    steps: [
-      "Проверьте интернет без VPN — откройте любой сайт",
-      "Закройте VPN-клиент в области уведомлений (возле часов) и запустите его снова",
-      "Проверьте, что дата и время на компьютере выставляются автоматически",
-      "Удалите профиль подключения и загрузите его заново с корпоративного портала",
-    ],
-  },
-  printer: {
-    category: "Принтер",
-    confidence: 0.64,
-    article: { id: "KB-PRN-001", title: "Принтер не печатает" },
-    question: "Что происходит с принтером?",
-    options: ["Мигает индикатор", "Документ завис в очереди", "Ничего не происходит"],
-    slot: "printer_state",
-    steps: [
-      "Проверьте, что принтер включён и в лотке есть бумага",
-      "Откройте очередь печати и удалите зависшие документы",
-      "Выключите принтер на 30 секунд и включите снова",
-    ],
-  },
-};
-
-// Общие рекомендации «от ИИ» — не из базы знаний
-const MOCK_GENERAL_STEPS = [
-  "Перезагрузите компьютер — это устраняет большую часть временных сбоев",
-  "Проверьте, что установлены последние обновления системы и нужной программы",
-  "Попробуйте то же действие на другом компьютере или под другой учётной записью",
-];
-const MOCK_CALL_SPECIALIST = "Позвать специалиста";
-
-const LONG_TEXT = Array.from(
-  { length: 30 },
-  (_, i) => `${i + 1}. Длинный абзац для проверки прокрутки: лента должна остановиться на начале ответа, а не на его конце.`
-).join("\n");
-
-const mock = {
-  ticketId: null, token: null, scenario: null, phase: null,
-  slots: {}, stepsDone: [], problem: "", actions: 0,
-  failed: new Set(), // request_id, на которых уже «упали»
-};
-
-async function mockResponse(path, body) {
-  const text = (body.message || "").trim();
-  const cmd = text.toLowerCase();
-
-  await sleep(cmd === "/slow" ? 4000 : 600 + Math.random() * 500);
-
-  // Сбои срабатывают один раз: «Повторить» с тем же request_id уже проходит
-  const firstTry = !mock.failed.has(body.request_id);
-  if (firstTry && ["/offline", "/429"].includes(cmd)) {
-    mock.failed.add(body.request_id);
-    throw cmd === "/429" ? new ApiError(429) : new ApiError(0, "network");
-  }
-  if (cmd === "/404") throw new ApiError(404);
-  if (path.includes("/rate") || path.includes("/escalate")) {
-    // Как на реальном API: без правильного token не принимаем
-    if (!body.token || body.token !== mock.token) throw new ApiError(422);
-    if (path.includes("/escalate")) mock.phase = "closed";
-    return { ok: true };
-  }
-
-  if (!body.ticket_id) {
-    // Новое обращение
-    Object.assign(mock, {
-      ticketId: "t_" + randomHex(2), token: "s_" + randomHex(8),
-      scenario: null, phase: "start", slots: {}, stepsDone: [],
-      problem: text, actions: 0,
-    });
-  } else if (body.ticket_id !== mock.ticketId) {
-    throw new ApiError(404); // например, после перезагрузки страницы
-  }
-  mock.actions++;
-
-  if (cmd === "/error") {
-    return mockReply("CLASSIFYING", { type: "error", text: "Не получилось обработать сообщение. Попробуйте ещё раз." });
-  }
-  if (cmd === "/long") {
-    return mockReply("CLARIFYING", { type: "question", text: LONG_TEXT, quick_replies: ["Понятно"] });
-  }
-
-  const answer = body.quick_reply || text;
-  if (body.quick_reply === MOCK_CALL_SPECIALIST && mock.phase !== "closed") {
-    return mockTransfer("Обращение передано специалисту. Он увидит всё, что вы уже попробовали, и свяжется с вами.");
-  }
-  switch (mock.phase) {
-    case "start":
-    case "choice":
-      return mockClassify(answer);
-    case "question": {
-      const sc = MOCK_SCENARIOS[mock.scenario];
-      mock.slots[sc.slot] = answer;
-      mock.phase = "steps";
-      return mockSteps("Попробуем решить по шагам. Если на каком-то шаге всё заработает — сразу отметьте это.");
-    }
-    case "steps":
-      return mockStepsResult(body.quick_reply);
-    case "general":
-      return mockGeneralResult(body.quick_reply);
-    default:
-      throw new ApiError(409); // обращение уже закрыто
-  }
-}
-
-function mockClassify(text) {
-  const t = text.toLowerCase();
-  let key = null;
-  if (/wi-?fi|вай-?фай/.test(t)) key = "wifi";
-  else if (/vpn|впн/.test(t)) key = "vpn";
-  else if (/принтер|печат/.test(t)) key = "printer";
-
-  if (key) {
-    mock.scenario = key;
-    mock.phase = "question";
-    const sc = MOCK_SCENARIOS[key];
-    return mockReply("CLARIFYING", { type: "question", text: sc.question, quick_replies: sc.options });
-  }
-
-  // Неоднозначно: «интернет» бывает и Wi-Fi, и VPN — уточняем только между ними
-  if (/интернет|сеть|сети/.test(t)) {
-    mock.phase = "choice";
-    return mockReply(
-      "CLASSIFYING",
-      { type: "choice", text: "Уточните, пожалуйста: с каким подключением проблема?", quick_replies: ["Корпоративный Wi-Fi", "VPN из дома"] },
-      { category: null, confidence: 0.48 }
-    );
-  }
-
-  if (/парол/.test(t)) {
-    return mockTransfer(
-      "Сброс пароля делает специалист — это требование безопасности. Обращение передано, с вами свяжутся в течение 15 минут.",
-      { category: "Учётная запись", confidence: 0.55, article: { id: "KB-ACC-010", title: "Сброс пароля" } }
-    );
-  }
-
-  // В базе знаний ничего нет — сразу общие рекомендации
-  return mockGeneral("Готового решения в базе знаний нет. Вот общие рекомендации — если не помогут, позовите специалиста.");
-}
-
-function mockSteps(intro = "") {
-  const sc = MOCK_SCENARIOS[mock.scenario];
-  return mockReply("SOLVING", { type: "steps", text: intro, steps: sc.steps });
-}
-
-// Сервер узнаёт только итог гида — одно сообщение вместо запроса на каждый шаг
-function mockStepsResult(quickReply) {
-  const sc = MOCK_SCENARIOS[mock.scenario];
-  if (quickReply === QR.SOLVED) return mockSummary();
-  if (quickReply === QR.NOT_SOLVED) {
-    mock.stepsDone = [...sc.steps];
-    return mockGeneral("Вот общие рекомендации. Если не помогут — позовите специалиста.");
-  }
-  return mockSteps("Давайте пройдём шаги по порядку — отмечайте результат кнопками.");
-}
-
-function mockGeneral(intro) {
-  const sc = MOCK_SCENARIOS[mock.scenario];
-  mock.phase = "general";
-  return mockReply(
-    "SOLVING",
-    { type: "steps", source: "general", text: intro, steps: MOCK_GENERAL_STEPS, quick_replies: [MOCK_CALL_SPECIALIST] },
-    { category: sc?.category ?? "Другое", confidence: sc ? sc.confidence : 0.3, article: null }
-  );
-}
-
-function mockGeneralResult(quickReply) {
-  if (quickReply === QR.SOLVED) return mockSummary();
-  if (quickReply === QR.NOT_SOLVED) {
-    mock.stepsDone.push(...MOCK_GENERAL_STEPS);
-    mock.phase = "unsolved";
-    // Не решено, но специалист ещё не подключён: state не ESCALATED
-    return mockReply(
-      "VERIFYING",
-      { type: "escalation", text: "К сожалению, рекомендации не помогли. Вы можете обратиться к специалисту — он увидит всё, что вы уже попробовали." },
-      { ticket_card: mockCard(false), article: null }
-    );
-  }
-  return mockGeneral("Давайте пройдём рекомендации по порядку — отмечайте результат кнопками.");
-}
-
-function mockSummary() {
-  mock.phase = "closed";
-  return mockReply(
-    "RESOLVED",
-    { type: "summary", text: "Проблема решена. Если она повторится — начните новое обращение." },
-    { ticket_card: mockCard(true) }
-  );
-}
-
-// Обращение уже у специалиста
-function mockTransfer(text, override = {}) {
-  mock.phase = "closed";
-  return mockReply("ESCALATED", { type: "escalation", text }, { ...override, ticket_card: mockCard(false, override) });
-}
-
-function mockCard(resolved, override = {}) {
-  const sc = MOCK_SCENARIOS[mock.scenario];
-  return {
-    ticket_id: mock.ticketId,
-    category: override.category ?? sc?.category ?? "Другое",
-    problem_summary: mock.problem || "—",
-    slots: { ...mock.slots },
-    steps_done: [...mock.stepsDone],
-    resolved_by_bot: resolved,
-    needs_specialist: !resolved,
-    article_id: override.article?.id ?? sc?.article.id ?? null,
-    created_at: new Date().toISOString().slice(0, 19),
-  };
-}
-
-function mockReply(stateName, reply, extra = {}) {
-  const sc = MOCK_SCENARIOS[mock.scenario];
-  return {
-    ticket_id: mock.ticketId,
-    token: mock.token,
-    state: stateName,
-    category: sc?.category ?? null,
-    confidence: sc?.confidence ?? null,
-    article: sc?.article ?? null,
-    reply: { text: "", quick_replies: [], steps: [], source: "kb", ...reply },
-    ticket_card: null,
-    user_actions_count: mock.actions,
-    ...extra,
-  };
 }

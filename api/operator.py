@@ -1,4 +1,4 @@
-"""Вход оператора в панель. ВЛАДЕЛЕЦ: A."""
+"""Вход оператора в панель."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response

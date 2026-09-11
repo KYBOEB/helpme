@@ -54,13 +54,8 @@ async function apiPost(url, body) {
 /* ---------- Мелочи ---------- */
 
 /**
- * Повесить обработчик, не падая на отсутствующем элементе.
- *
- * Зачем: если браузер закешировал старую версию admin.html, а admin.js приехал
- * новый (или наоборот), обычный getElementById(...).addEventListener кидает
- * TypeError на этапе загрузки. Скрипт умирает целиком, и панель выглядит
- * «ничего не грузит, вкладки не нажимаются». Пропущенный обработчик — гораздо
- * меньшая беда, чем мёртвая страница, поэтому такой промах только логируем.
+ * Повесить обработчик, не падая на отсутствующем элементе: при рассогласовании
+ * версий разметки и скрипта страница должна остаться рабочей.
  */
 function on(id, event, handler) {
   const node = document.getElementById(id);
@@ -298,8 +293,6 @@ function renderQueue(items) {
       try {
         await apiPost(API.take(t.ticket_id));
         state.queueSignature = null;      // состав очереди изменился нами
-        // Взял в работу — сразу открываем диалог. Раньше карточка просто
-        // исчезала из очереди, и специалисту приходилось искать её заново.
         openTicket(t.ticket_id);
       } catch {
         btn.disabled = false;
@@ -318,9 +311,8 @@ function renderQueue(items) {
 }
 
 /* ---------- Вкладка открытого обращения ----------
-   Раньше карточка открывалась модальным окном: узкая колонка, в которой
-   переписка, шаги и форма ответа не помещались одновременно. Теперь это
-   полноценная вкладка — слева диалог, справа карточка и действия. */
+   Слева переписка во всю высоту экрана и поле ответа, справа карточка
+   и действия. */
 
 const TICKET_REFRESH_MS = 8000;
 
@@ -350,13 +342,6 @@ async function openTicket(id) {
   }
 }
 
-function closeTicketView() {
-  stopTicketRefresh();
-  state.activeTicketId = null;
-  document.getElementById("tab-btn-ticket").hidden = true;
-  document.getElementById("tab-ticket-no").textContent = "";
-  switchTab("tickets");
-}
 
 function renderTicket(card) {
   const s = statusInfo(card);
@@ -723,9 +708,8 @@ on("kb-search", "keydown", (e) => {
 // Период на вкладке «Аналитика»
 on("period-select", "change", loadStats);
 
-/* Форма добавления карточки живёт в модальном окне: вкладка «База знаний»
-   раньше открывалась сразу большой формой, за которой не было видно
-   ни поиска, ни списка пробелов. */
+/* Форма добавления карточки живёт в модальном окне, чтобы вкладка
+   «База знаний» начиналась с поиска и списка пробелов. */
 const kbModal = document.getElementById("kb-modal");
 
 function openKbModal() {

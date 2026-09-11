@@ -1,4 +1,4 @@
-"""POST /api/chat — единственный эндпоинт диалога. ВЛАДЕЛЕЦ: A."""
+"""POST /api/chat — единственный эндпоинт диалога."""
 from __future__ import annotations
 
 import json

@@ -31,13 +31,13 @@ def load_cases(path: Path = CASES_PATH) -> list[dict]:
 
 
 def predict_with_router(text: str) -> tuple[str, float]:
-    """Полный режим — через роутер участника B."""
+    """Полный режим — через роутер."""
     try:
         from llm.router import route  # type: ignore
     except ImportError as e:
         raise SystemExit(
             "Модуль llm.router не найден. Запусти с --retrieval-only "
-            "или дождись участника B."
+            "или используйте --retrieval-only."
         ) from e
     result = route(text)
     # Договорись с B о формате: ожидаем объект с .category и .confidence
@@ -130,7 +130,7 @@ def main() -> int:
     parser.add_argument(
         "--retrieval-only",
         action="store_true",
-        help="Проверять только поиск, без роутера участника B",
+        help="Проверять только поиск, без вызова модели",
     )
     args = parser.parse_args()
     return run(retrieval_only=args.retrieval_only)
