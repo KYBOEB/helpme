@@ -316,6 +316,58 @@ check("за сутки обращений не больше, чем за всё 
       s_day["total"] <= s_all["total"], f'{s_day["total"]} > {s_all["total"]}')
 
 
+# ------------------- 13. ассистент не обещает того, чего не было
+
+from core import assist as _assist_mod  # noqa: E402
+
+for promise in ("Готовой инструкции нет, обращение передано специалисту.",
+                "Заявка зарегистрирована, с вами свяжется инженер поддержки.",
+                "Передаю вопрос эксперту, а пока попробуйте это."):
+    cleaned = _assist_mod._sanitize(AnswerResult(text=promise, steps=["шаг"]))
+    check(f"вступление «{promise[:32]}…» очищено",
+          "специалист" not in cleaned.text.lower()
+          and "эксперт" not in cleaned.text.lower()
+          and "свяж" not in cleaned.text.lower(),
+          cleaned.text[:90])
+
+ok_intro = "Готовой инструкции нет, попробуем безопасные общие шаги."
+check("нормальное вступление не трогаем",
+      _assist_mod._sanitize(AnswerResult(text=ok_intro, steps=["шаг"])).text == ok_intro,
+      "текст изменён")
+
+
+# ------------------- 14. нет двух сообщений об одном и том же
+
+_route_plan.append(RouteResult(category="VPN", article_id=None, confidence=0.9,
+                               problem_summary="что-то с впн"))
+d = chat("не подключается VPN").json()
+check("при отсутствии статьи вступление не пустое",
+      bool(d["reply"]["text"]), "пустой текст")
+
+# шаги из базы не помогли → общие рекомендации без повторного вступления
+d = chat("не подключается VPN").json()
+tid14, tok14 = d["ticket_id"], d["token"]
+if d["reply"]["type"] == "question":            # ответили на уточняющий вопрос
+    d = chat(quick_reply=d["reply"]["quick_replies"][0],
+             ticket_id=tid14, token=tok14).json()
+d2 = chat("не помогло", ticket_id=tid14, token=tok14).json()
+check("после «не помогло» текст не дублирует подводку интерфейса",
+      d2["reply"]["text"] == "" or "не помогли" not in d2["reply"]["text"],
+      d2["reply"]["text"][:120])
+
+
+# ------------------- 15. карточка обращения доступна, но не в чате
+
+d = chat("не подключается VPN").json()
+tid15, tok15 = d["ticket_id"], d["token"]
+r = client.post(f"/api/tickets/{tid15}/escalate", json={"token": tok15})
+check("эскалация по кнопке работает", r.status_code == 200, str(r.status_code))
+card = client.get(f"/api/tickets/{tid15}/export.json").json()
+check("карточка обращения формируется и выгружается",
+      card["ticket_id"] == tid15 and "messages" in card and "public_no" in card,
+      str(card)[:140])
+
+
 print()
 if FAILED:
     print(f"ПРОВАЛЕНО {len(FAILED)}: " + "; ".join(FAILED))

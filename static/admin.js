@@ -53,6 +53,26 @@ async function apiPost(url, body) {
 
 /* ---------- Мелочи ---------- */
 
+/**
+ * Повесить обработчик, не падая на отсутствующем элементе.
+ *
+ * Зачем: если браузер закешировал старую версию admin.html, а admin.js приехал
+ * новый (или наоборот), обычный getElementById(...).addEventListener кидает
+ * TypeError на этапе загрузки. Скрипт умирает целиком, и панель выглядит
+ * «ничего не грузит, вкладки не нажимаются». Пропущенный обработчик — гораздо
+ * меньшая беда, чем мёртвая страница, поэтому такой промах только логируем.
+ */
+function on(id, event, handler) {
+  const node = document.getElementById(id);
+  if (!node) {
+    console.warn(`admin.js: элемент #${id} не найден, обработчик ${event} не повешен`);
+    return null;
+  }
+  node.addEventListener(event, handler);
+  return node;
+}
+
+
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -279,7 +299,7 @@ function renderQueue(items) {
         openTicket(t.ticket_id);
       } catch {
         btn.disabled = false;
-        document.getElementById("queue-count").title = "Не удалось взять обращение";
+        const c = document.getElementById("queue-count"); if (c) c.title = "Не удалось взять обращение";
       }
     });
 
@@ -504,13 +524,13 @@ function renderReplyBox(card) {
 
 /* ---------- Действия справа ---------- */
 
-document.getElementById("btn-back-to-list").addEventListener("click", () => {
+on("btn-back-to-list", "click", () => {
   // Выходим к списку, НЕ закрывая обращение: к нему можно вернуться
   stopTicketRefresh();
   switchTab("tickets");
 });
 
-document.getElementById("btn-close-ticket").addEventListener("click", async () => {
+on("btn-close-ticket", "click", async () => {
   const id = state.activeTicketId;
   if (!id) return;
   const status = document.getElementById("ticket-action-status");
@@ -528,12 +548,12 @@ document.getElementById("btn-close-ticket").addEventListener("click", async () =
   }
 });
 
-document.getElementById("btn-download-json").addEventListener("click", () => {
+on("btn-download-json", "click", () => {
   if (!state.activeTicketId) return;
   window.location.href = API.exportJson(state.activeTicketId);
 });
 
-document.getElementById("toggle-share").addEventListener("change", async (e) => {
+on("toggle-share", "change", async (e) => {
   if (!state.activeTicketId) {
     e.target.checked = false;
     return;
@@ -552,7 +572,7 @@ document.getElementById("toggle-share").addEventListener("change", async (e) => 
   }
 });
 
-document.getElementById("btn-copy-link").addEventListener("click", async () => {
+on("btn-copy-link", "click", async () => {
   const status = document.getElementById("ticket-action-status");
   const url = sessionStorage.getItem(`share:${state.activeTicketId}`);
   if (!url) {
@@ -687,17 +707,17 @@ async function searchKB() {
 document.querySelectorAll(".tab").forEach((t) => {
   t.addEventListener("click", () => switchTab(t.dataset.tab));
 });
-document.getElementById("btn-refresh").addEventListener("click", loadTickets);
-document.getElementById("filter-category").addEventListener("change", applyFilters);
-document.getElementById("filter-status").addEventListener("change", applyFilters);
-document.getElementById("filter-search").addEventListener("input", applyFilters);
-document.getElementById("kb-btn").addEventListener("click", searchKB);
-document.getElementById("kb-search").addEventListener("keydown", (e) => {
+on("btn-refresh", "click", loadTickets);
+on("filter-category", "change", applyFilters);
+on("filter-status", "change", applyFilters);
+on("filter-search", "input", applyFilters);
+on("kb-btn", "click", searchKB);
+on("kb-search", "keydown", (e) => {
   if (e.key === "Enter") searchKB();
 });
 
 // Период на вкладке «Аналитика»
-document.getElementById("period-select").addEventListener("change", loadStats);
+on("period-select", "change", loadStats);
 
 /* Форма добавления карточки живёт в модальном окне: вкладка «База знаний»
    раньше открывалась сразу большой формой, за которой не было видно
@@ -705,20 +725,23 @@ document.getElementById("period-select").addEventListener("change", loadStats);
 const kbModal = document.getElementById("kb-modal");
 
 function openKbModal() {
+  if (!kbModal) return;
   kbModal.hidden = false;
-  document.getElementById("kb-title").focus();
+  document.getElementById("kb-title")?.focus();
 }
 
 function closeKbModal() {
-  kbModal.hidden = true;
+  if (kbModal) kbModal.hidden = true;
 }
 
-document.getElementById("kb-open-form").addEventListener("click", openKbModal);
-kbModal.querySelectorAll("[data-close-modal]").forEach((n) => {
-  n.addEventListener("click", closeKbModal);
-});
+on("kb-open-form", "click", openKbModal);
+if (kbModal) {
+  kbModal.querySelectorAll("[data-close-modal]").forEach((n) => {
+    n.addEventListener("click", closeKbModal);
+  });
+}
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !kbModal.hidden) closeKbModal();
+  if (e.key === "Escape" && kbModal && !kbModal.hidden) closeKbModal();
 });
 window.closeKbModal = closeKbModal;
 

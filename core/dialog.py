@@ -134,10 +134,10 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
 
     _notify_external(db, ticket)
 
-    # Номер и категорию показывает карточка ниже — повторять их в тексте незачем.
-    text = (f"{intro} Передаю обращение специалисту поддержки. Категорию, ваши "
-            f"ответы и выполненные шаги он уже видит, объяснять заново ничего "
-            f"не нужно.").strip()
+    number = f"№{ticket.public_no}" if ticket.public_no else ""
+    text = (f"{intro} Передаю обращение {number} специалисту поддержки. "
+            f"Категорию, ваши ответы и выполненные шаги он уже видит, "
+            f"объяснять заново ничего не нужно.").replace("  ", " ").strip()
     return _respond(db, ticket, Reply(type="escalation", text=text), with_card=True)
 
 
@@ -299,13 +299,10 @@ def _assist(db: Session, ticket: Ticket, user_text: str,
     repo.log_event(db, ticket.id, "assisted", {"steps": len(answer.steps)})
 
     # Один текст, а не два подряд про одно и то же.
-    if reason == "gap":
-        text = (answer.text
-                or "Готовой инструкции для этого случая в базе знаний нет. "
-                   "Попробуем общие шаги — они безопасны.")
-    else:
-        text = ("Шаги из базы знаний не помогли. Попробуем общие рекомендации — "
-                "если и они не сработают, подключу специалиста.")
+    # При reason="insufficient" интерфейс уже показал строку «Рекомендации
+    # из базы знаний не помогли, сейчас ответит ИИ-ассистент» — повторять
+    # то же самое своими словами незачем, поэтому текста нет вовсе.
+    text = (answer.text if reason == "gap" else "")
 
     # Кнопки «Всё получилось» и «Проблема ещё не решена» рисует карточка шага.
     # Отдельной кнопки «Позвать специалиста» здесь нет: человека зовём после
@@ -485,6 +482,11 @@ def _verify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
         repo.log_event(db, ticket.id, "resolved",
                        {"actions": ticket.user_actions_count})
         text = answerer.make_summary(_card(db, ticket))
+        # Карточку-плашку в чате больше не рисуем — итог должен быть в самом
+        # тексте, иначе пользователь читает одно и то же дважды. Номер нужен,
+        # чтобы человек мог сослаться на обращение.
+        if ticket.public_no:
+            text = f"{text}\n\nОбращение №{ticket.public_no} закрыто."
         return _respond(db, ticket, Reply(type="summary", text=text), with_card=True)
 
     # Ответ непонятен — переспрашиваем один раз, не меняя состояния

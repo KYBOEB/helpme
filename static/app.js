@@ -465,17 +465,12 @@ function renderCard(data) {
     return;
   }
 
-  const resultEl = el("p", null, `Результат: ${resultText(data, outcome)}`);
-  const draft = el("div", "card-draft");
-  // Показываем короткий номер, а не внутренний идентификатор t_c18c55b3b7bd:
-  // такой номер человек может продиктовать по телефону.
-  const number = card.public_no ? `№${card.public_no}` : "";
-  draft.append(
-    el("p", null, `Обращение ${number}, ${card.category || data.category || "без категории"}`.replace(" ,", "")),
-    el("p", null, `Проблема: ${card.problem_summary || "—"}`),
-    resultEl
-  );
-  msg.body.append(draft, renderRating(ticketId));
+  // Карточки-плашки в чате нет: она дословно повторяла текст сообщения выше.
+  // Всё, что должен понять пользователь — какая проблема, решена ли она,
+  // что дальше и нужен ли специалист — есть в самом тексте ответа.
+  // Полная карточка обращения формируется и живёт в панели оператора,
+  // выгружается в JSON и уходит вебхуком во внешнюю систему.
+  msg.body.append(renderRating(ticketId));
 
   const actions = el("div", "msg-actions card-actions");
   const status = el("p", "card-status");
@@ -501,7 +496,6 @@ function renderCard(data) {
       try {
         await escalateTicket(ticketId);
         escBtn.remove();
-        resultEl.textContent = "Результат: передано специалисту";
         status.textContent = "Обращение передано специалисту — он увидит всё, что вы уже попробовали. Ответ придёт в этот же чат.";
         startPolling();
       } catch (e) {
