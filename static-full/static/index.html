@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Помоги мне — техподдержка</title>
   <!-- Никаких CDN: только локальные файлы -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/static/style.css?v=9">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="app.js" defer></script>
+  <script src="/static/app.js?v=9" defer></script>
 </head>
 <body>
   <div class="app">
@@ -66,9 +66,9 @@
                отдельно от текста, не накладывая поверх лишних символов.
                В покое все три стоят вплотную и выглядят одним логотипом. -->
           <div class="hero-logo" role="img" aria-label="Актион">
-            <img class="logo-piece logo-piece--left" src="img/logo-left.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--mid" src="img/logo-mid.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--right" src="img/logo-right.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--left" src="/static/img/logo-left.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--mid" src="/static/img/logo-mid.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--right" src="/static/img/logo-right.png" alt="" aria-hidden="true">
           </div>
           <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
           <p class="empty-text">ИТ-поддержка ТПУ — опишите проблему, найдём решение.</p>
@@ -94,13 +94,6 @@
                в поле ввода, не отправляет сразу. -->
           <p class="catalog-title">Частые категории:</p>
           <div class="catalog">
-            <button type="button" class="catalog-tile" data-fill="Не включается компьютер на рабочем месте">
-              <span class="catalog-icon" aria-hidden="true">🖥️</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Рабочее место</span>
-                <span class="catalog-example">Не включается компьютер</span>
-              </span>
-            </button>
             <button type="button" class="catalog-tile" data-fill="Нужен доступ к сетевой папке отдела">
               <span class="catalog-icon" aria-hidden="true">🔑</span>
               <span class="catalog-text">
@@ -113,13 +106,6 @@
               <span class="catalog-text">
                 <span class="catalog-name">VPN</span>
                 <span class="catalog-example">Не подключается VPN</span>
-              </span>
-            </button>
-            <button type="button" class="catalog-tile" data-fill="Не приходят письма на рабочую почту">
-              <span class="catalog-icon" aria-hidden="true">📧</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Почта</span>
-                <span class="catalog-example">Не приходят письма</span>
               </span>
             </button>
             <button type="button" class="catalog-tile" data-fill="Не подключается к корпоративному Wi-Fi">
