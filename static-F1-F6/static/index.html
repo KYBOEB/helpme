@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Помоги мне — техподдержка</title>
   <!-- Никаких CDN: только локальные файлы -->
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="/static/app.js?v=5" defer></script>
+  <script src="/static/app.js?v=6" defer></script>
 </head>
 <body>
   <div class="app">
@@ -66,11 +66,7 @@
             <img src="/static/img/aktion-logo.png" alt="Актион" width="509" height="71">
           </div>
           <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
-          <p class="empty-text">
-            ИТ-поддержка сотрудников и студентов ТПУ: рабочее место, доступы, VPN,
-            почта, Wi-Fi, программы и оборудование. Опишите проблему своими
-            словами — помощник подберёт решение или передаст обращение специалисту.
-          </p>
+          <p class="empty-text">ИТ-поддержка ТПУ — опишите проблему, найдём решение.</p>
 
           <!-- Сюда встаёт поле ввода на главном экране. В диалоге app.js переносит его вниз, в #dock -->
           <div id="hero-slot" class="hero-slot">
@@ -88,58 +84,35 @@
             </div>
           </div>
 
-          <!-- F1: семь категорий каталога услуг. Клик подставляет пример
-               в поле ввода — не отправляет сразу, человек может дописать своими словами. -->
-          <p class="catalog-title">Частые категории — нажмите, чтобы подставить пример:</p>
+          <!-- F1: категории каталога услуг, 2 строки по 3. Клик подставляет пример
+               в поле ввода — не отправляет сразу, человек может дописать своими словами.
+               Подсказка-пример — в title (всплывает при наведении), в самой плитке
+               только иконка и название, чтобы не перегружать текстом. -->
+          <p class="catalog-title">Частые категории:</p>
           <div class="catalog">
-            <button type="button" class="catalog-tile" data-fill="Не включается компьютер на рабочем месте">
+            <button type="button" class="catalog-tile" data-fill="Не включается компьютер на рабочем месте" title="Не включается компьютер на рабочем месте">
               <span class="catalog-icon" aria-hidden="true">🖥️</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Рабочее место</span>
-                <span class="catalog-example">Не включается компьютер</span>
-              </span>
+              <span class="catalog-name">Рабочее место</span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Нужен доступ к сетевой папке отдела">
+            <button type="button" class="catalog-tile" data-fill="Нужен доступ к сетевой папке отдела" title="Нужен доступ к сетевой папке отдела">
               <span class="catalog-icon" aria-hidden="true">🔑</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Доступы</span>
-                <span class="catalog-example">Нужен доступ к папке</span>
-              </span>
+              <span class="catalog-name">Доступы</span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не подключается корпоративный VPN">
+            <button type="button" class="catalog-tile" data-fill="Не подключается корпоративный VPN" title="Не подключается корпоративный VPN">
               <span class="catalog-icon" aria-hidden="true">🔒</span>
-              <span class="catalog-text">
-                <span class="catalog-name">VPN</span>
-                <span class="catalog-example">Не подключается VPN</span>
-              </span>
+              <span class="catalog-name">VPN</span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не приходят письма на рабочую почту">
+            <button type="button" class="catalog-tile" data-fill="Не приходят письма на рабочую почту" title="Не приходят письма на рабочую почту">
               <span class="catalog-icon" aria-hidden="true">📧</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Корпоративная почта</span>
-                <span class="catalog-example">Не приходят письма</span>
-              </span>
+              <span class="catalog-name">Почта</span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не подключается к корпоративному Wi-Fi">
+            <button type="button" class="catalog-tile" data-fill="Не подключается к корпоративному Wi-Fi" title="Не подключается к корпоративному Wi-Fi">
               <span class="catalog-icon" aria-hidden="true">📶</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Wi-Fi</span>
-                <span class="catalog-example">Не подключается Wi-Fi</span>
-              </span>
+              <span class="catalog-name">Wi-Fi</span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не устанавливается программа на рабочий компьютер">
-              <span class="catalog-icon" aria-hidden="true">🧩</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Программное обеспечение</span>
-                <span class="catalog-example">Не устанавливается программа</span>
-              </span>
-            </button>
-            <button type="button" class="catalog-tile" data-fill="Не печатает принтер">
+            <button type="button" class="catalog-tile" data-fill="Не печатает принтер" title="Не печатает принтер">
               <span class="catalog-icon" aria-hidden="true">🖨️</span>
-              <span class="catalog-text">
-                <span class="catalog-name">Оборудование</span>
-                <span class="catalog-example">Не печатает принтер</span>
-              </span>
+              <span class="catalog-name">Оборудование</span>
             </button>
           </div>
 
