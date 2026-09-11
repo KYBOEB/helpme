@@ -9,6 +9,15 @@ const MAX_LEN = 2000;             // лимит длины сообщения
 const COUNTER_FROM = 1800;        // счётчик появляется после этого числа символов
 const REQUEST_TIMEOUT_MS = 20000; // дольше ждать нет смысла — показываем ошибку
 
+// Плейсхолдер главного поля ввода печатается и стирается по кругу — первая
+// фраза оставлена как была статична раньше, дальше — примеры проблем.
+const HERO_PLACEHOLDERS = [
+  "Опишите проблему…",
+  "Не подключается корпоративный VPN",
+  "Не могу подключиться к Wi-Fi",
+  "Не печатает принтер",
+];
+
 // Сервер присылает все шаги сразу; чекбоксы возле шагов — просто отметки для
 // пользователя (F2), они никуда не отправляются. Результат инструкции —
 // одно из двух сообщений на сервер, вне зависимости от того, что отмечено.
@@ -152,6 +161,7 @@ function init() {
   });
   initKbSearch();
   loadKbCount();
+  initHeroPlaceholder();
 
   backBtn.addEventListener("click", resetConversation);
   specialistBtn.addEventListener("click", callSpecialist);
@@ -1242,6 +1252,51 @@ function fillInput(text) {
    ========================================================================== */
 
 let kbSearchTimer = null;
+
+/* ==========================================================================
+   ПЛЕЙСХОЛДЕР ГЛАВНОГО ПОЛЯ: печатается и стирается по кругу
+   Идёт постоянно, независимо от фокуса — placeholder всё равно не виден,
+   пока в поле есть текст, так что мешать вводу это никак не может.
+   ========================================================================== */
+
+let heroPlaceholderTimer = null;
+
+function initHeroPlaceholder() {
+  if (!inputEl) return;
+  if (reducedMotion.matches) {
+    inputEl.placeholder = HERO_PLACEHOLDERS[0];
+    return;
+  }
+
+  const TYPE_MS = 55, ERASE_MS = 28, PAUSE_MS = 1800, GAP_MS = 300;
+  let qi = 0;
+
+  function cycle() {
+    const text = HERO_PLACEHOLDERS[qi % HERO_PLACEHOLDERS.length];
+    let i = 0;
+    (function typeChar() {
+      inputEl.placeholder = text.slice(0, i);
+      if (i < text.length) {
+        i++;
+        heroPlaceholderTimer = setTimeout(typeChar, TYPE_MS);
+      } else {
+        heroPlaceholderTimer = setTimeout(eraseChar, PAUSE_MS);
+      }
+    })();
+    function eraseChar() {
+      if (i > 0) {
+        i--;
+        inputEl.placeholder = text.slice(0, i);
+        heroPlaceholderTimer = setTimeout(eraseChar, ERASE_MS);
+      } else {
+        qi++;
+        heroPlaceholderTimer = setTimeout(cycle, GAP_MS);
+      }
+    }
+  }
+
+  cycle();
+}
 
 function initKbSearch() {
   if (!kbSearchInput) return;

@@ -84,8 +84,8 @@ button { font: inherit; color: inherit; }
   height: 100%;
   transition: transform 0.32s ease;
 }
-.page-shell.is-shifted-right { transform: translateX(4.5rem); }
-.page-shell.is-shifted-left { transform: translateX(-4.5rem); }
+.page-shell.is-shifted-right { transform: translateX(11.25rem); }
+.page-shell.is-shifted-left { transform: translateX(-11.25rem); }
 
 /* ---------- Шапка ---------- */
 
@@ -1235,13 +1235,13 @@ button { font: inherit; color: inherit; }
 
   .history-detail-actions .btn { flex: 1 1 100%; } /* кнопки друг под другом, текст в одну строку */
 
-  .edge-tab { width: 4rem; height: 14rem; }
-  .edge-tab-label { font-size: 0.9375rem; }
-  .edge-tab--left { padding-right: 1.375rem; }
-  .edge-tab--right { padding-left: 1.375rem; }
+  .edge-tab { width: 3.25rem; height: 11rem; }
+  .edge-tab-label { font-size: 0.875rem; }
+  .edge-tab--left { padding-right: 1.125rem; }
+  .edge-tab--right { padding-left: 1.125rem; }
   .edge-panel { width: 92%; }
-  .page-shell.is-shifted-right { transform: translateX(2.5rem); }
-  .page-shell.is-shifted-left { transform: translateX(-2.5rem); }
+  .page-shell.is-shifted-right { transform: translateX(6.25rem); }
+  .page-shell.is-shifted-left { transform: translateX(-6.25rem); }
 }
 
 
