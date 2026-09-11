@@ -16,6 +16,8 @@
   --ok-soft: #E5F3EB;
   --warn: #8A5A00;
   --warn-soft: #FFF3D1;
+  --info: #1F6FEB;
+  --info-soft: #E7F0FF;
   --radius-sm: 8px;
   --radius: 12px;
   --shadow: 0 1px 2px rgba(26, 26, 26, 0.05), 0 4px 14px rgba(26, 26, 26, 0.06);
@@ -78,15 +80,23 @@ button { font: inherit; color: inherit; }
 
 .header {
   flex: none;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
   padding: 0.75rem 1.25rem;
   background: var(--card);
   border-bottom: 1px solid var(--border);
 }
 
-.header-brand { min-width: 0; }
+/* Внутренний контейнер той же ширины, что и лента: на широких экранах
+   шапка выравнивается с остальным содержимым, а не прилипает к краю. */
+.header-inner {
+  width: 100%;
+  max-width: var(--content-w);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.header-brand { min-width: 0; flex: 1; }
 
 .header-title {
   margin: 0;
@@ -104,8 +114,9 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
 }
 
-/* «На главную» — видна только в диалоге */
-.back-btn {
+/* «На главную» / «Назад», «Специалист», «Мои обращения» — одинаковый вид пилюли */
+.back-btn,
+.header-btn {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -121,9 +132,18 @@ button { font: inherit; color: inherit; }
   transition: border-color var(--dur), color var(--dur);
 }
 
-.back-btn:hover {
+.back-btn:hover,
+.header-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex: none;
 }
 
 /* ---------- Полоса «незавершённое обращение» ---------- */
@@ -228,23 +248,27 @@ button { font: inherit; color: inherit; }
   text-align: left;
 }
 
-.examples-title {
+/* ---------- F1: каталог категорий ---------- */
+
+.catalog-title {
   margin: 0 0 0.75rem;
   font-size: 0.9375rem;
   color: var(--text-muted);
+  text-align: left;
 }
 
-.examples {
+.catalog {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.625rem;
+  margin-bottom: 1.5rem;
 }
 
-.example {
+.catalog-tile {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  min-height: 3.25rem;
+  min-height: 3.5rem;
   padding: 0.625rem 1rem;
   text-align: left;
   background: var(--card);
@@ -254,15 +278,99 @@ button { font: inherit; color: inherit; }
   transition: border-color var(--dur), background-color var(--dur);
 }
 
-.example:hover {
+.catalog-tile:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.example-icon {
+.catalog-icon {
   flex: none;
   font-size: 1.25rem;
   line-height: 1;
+}
+
+.catalog-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.catalog-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.catalog-example {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- F1: поиск по базе знаний ---------- */
+
+.kb-search {
+  text-align: left;
+}
+
+.kb-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--dur);
+}
+
+.kb-search-box:focus-within { border-color: var(--accent); }
+
+.kb-search-icon { flex: none; }
+
+.kb-search-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.kb-search-box input:focus,
+.kb-search-box input:focus-visible { outline: none; }
+
+.kb-search-results {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.kb-result {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--dur), background-color var(--dur);
+}
+
+.kb-result:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.kb-count {
+  margin: 0.625rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
 }
 
 /* ---------- Поле ввода ---------- */
@@ -466,6 +574,98 @@ button { font: inherit; color: inherit; }
   gap: 0.5rem;
 }
 
+/* ---------- F3: строка категории/уверенности ---------- */
+
+.classify-line {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.classify-hint {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.classify-hint:hover,
+.classify-hint:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- F3: карточка обращения ---------- */
+
+.ticket-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ticket-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ticket-card-no { font-weight: 700; }
+
+.ticket-card-category {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.ticket-card-summary { margin: 0; }
+
+.ticket-card-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ticket-card-block-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ticket-card-list {
+  margin: 0;
+  padding-left: 1.125rem;
+}
+
+.ticket-card-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
 /* ---------- Индикатор «печатает» ---------- */
 
 .msg--bot .typing {
@@ -555,7 +755,7 @@ button { font: inherit; color: inherit; }
   color: #fff;
 }
 
-/* ---------- Пошаговый гид ---------- */
+/* ---------- F2: пошаговый гид — все шаги сразу ---------- */
 
 .step-card {
   padding: 1rem 1.25rem 1.125rem;
@@ -589,15 +789,43 @@ button { font: inherit; color: inherit; }
   height: 100%;
   background: var(--accent);
   border-radius: inherit;
-  transition: width 400ms ease;
+  transition: width 250ms ease;
 }
 
-.step-text {
+.step-list {
   margin: 0 0 1rem;
-  font-size: 1.125rem;
-  font-weight: 500;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.step-item-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  cursor: pointer;
+}
+
+.step-check {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1875rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.step-item-text {
+  font-size: 1rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.step-check:checked ~ .step-item-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
 }
 
 .step-actions {
@@ -606,7 +834,7 @@ button { font: inherit; color: inherit; }
   gap: 0.5rem;
 }
 
-/* Пройденный шаг: одна приглушённая строка */
+/* Свёрнутая инструкция: одна приглушённая строка с итогом */
 .step-card.is-collapsed {
   display: flex;
   align-items: center;
@@ -649,7 +877,7 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
 }
 
-/* Новый шаг появляется мягко, без прыжка */
+/* Карточка шагов появляется мягко, без прыжка */
 .step-card:not(.is-collapsed) { animation: msg-in var(--dur) ease-out; }
 
 /* Оценка ответа */
@@ -657,6 +885,15 @@ button { font: inherit; color: inherit; }
 .rating-label { margin: 0; font-size: 0.9375rem; color: var(--text-muted); }
 .rating-status { margin: 0; font-size: 0.9375rem; color: var(--text-muted); }
 .rating-status:empty { display: none; }
+
+/* После оценки кнопки остаются на месте — исчезает только возможность
+   нажать ещё раз, а не сам факт, что здесь была оценка. */
+.rating-buttons .btn.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.rating-buttons .btn.is-selected:disabled { opacity: 1; }
 
 /* ---------- Ответ не из базы знаний (source: "general") ---------- */
 
@@ -716,34 +953,138 @@ button { font: inherit; color: inherit; }
 .card-status { margin: 0; font-size: 0.9375rem; color: var(--text-muted); }
 .card-status:empty { display: none; }
 
-/* Временная карточка итога (этап 2 — полноценная) */
-.card-draft {
-  padding: 0.75rem 1rem;
-  background: var(--card);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
+/* ---------- F5: «Мои обращения» ---------- */
+
+.history,
+.history-detail {
+  flex: 1 0 auto;
+  padding: 1.5rem 1.25rem 2rem;
 }
-.card-draft p { margin: 0.125rem 0; }
+
+.history-inner,
+.history-detail-inner {
+  width: 100%;
+  max-width: var(--content-w);
+  margin: 0 auto;
+}
+
+.history-title {
+  margin: 0 0 1rem;
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+.history-status {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.history-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.875rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--dur);
+}
+
+.history-row:hover { border-color: var(--accent); }
+
+.history-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+.history-row-no { font-weight: 700; }
+
+.history-row-category {
+  margin: 0 0 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.history-row-summary {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-row-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.history-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.history-badge--ok { background: var(--ok-soft); color: var(--ok); }
+.history-badge--info { background: var(--info-soft); color: var(--info); }
+.history-badge--muted { background: #EFEFEF; color: #666666; }
+
+.history-detail-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.history-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 
 /* ---------- Телефон ---------- */
 
 @media (max-width: 520px) {
   .header { padding: 0.625rem 0.875rem; gap: 0.5rem; }
+  .header-inner { gap: 0.5rem; }
   .header-subtitle { display: none; }
   .back-btn { font-size: 0.875rem; }
+  .header-btn {
+    padding: 0.375rem;
+    min-width: 2.25rem;
+    justify-content: center;
+  }
+  .header-btn-label { display: none; }
+  .header-actions { gap: 0.375rem; }
 
   .empty { padding: 1.5rem 0.875rem 2rem; }
   .hero-logo { padding: 0.75rem 1.125rem; margin-bottom: 1rem; }
   .hero-logo img { width: 9.5rem; }
   .empty-title { font-size: 1.5rem; }
   .hero-slot { margin-bottom: 1.5rem; }
-  .examples { grid-template-columns: 1fr; }
+  .catalog { grid-template-columns: 1fr; }
 
   .feed { padding: 1rem 0.875rem; }
   .step-card { padding: 0.875rem 1rem 1rem; }
   .step-actions .btn,
   .card-actions .btn { flex: 1 1 100%; } /* кнопки друг под другом, текст в одну строку */
   .dock { padding-left: 0.875rem; padding-right: 0.875rem; }
+
+  .history,
+  .history-detail { padding: 1rem 0.875rem 1.5rem; }
+  .history-detail-actions .btn { flex: 1 1 100%; }
 }
 
 

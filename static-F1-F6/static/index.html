@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Помоги мне — техподдержка</title>
+  <!-- Никаких CDN: только локальные файлы -->
+  <link rel="stylesheet" href="/static/style.css?v=5">
+  <!-- Не type="module": модули не грузятся при открытии через file:// -->
+  <script src="/static/app.js?v=5" defer></script>
+</head>
+<body>
+  <div class="app">
+
+    <!-- Шапка: название; слева в диалоге/истории появляется кнопка «назад»,
+         справа — «Специалист» (F4) и «Мои обращения» (F5). -->
+    <header class="header">
+      <div class="header-inner">
+        <button id="back-btn" class="back-btn" type="button" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m15 18-6-6 6-6"/>
+          </svg>
+          <span>На главную</span>
+        </button>
+        <div class="header-brand">
+          <h1 class="header-title">Помоги мне</h1>
+          <p class="header-subtitle">Виртуальный помощник техподдержки</p>
+        </div>
+        <div class="header-actions">
+          <!-- F4: видна всегда, пока обращение не закрыто -->
+          <button id="specialist-btn" class="header-btn" type="button" hidden>
+            <span aria-hidden="true">🧑‍💼</span>
+            <span class="header-btn-label">Специалист</span>
+          </button>
+          <!-- F5: видна, если в браузере уже есть client_id -->
+          <button id="history-btn" class="header-btn" type="button" hidden>
+            <span aria-hidden="true">🕘</span>
+            <span class="header-btn-label">Мои обращения</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Полоса восстановления: показывается, если в браузере осталось
+         незавершённое обращение. Скрыта, пока app.js её не покажет. -->
+    <div id="resume" class="resume" hidden>
+      <p class="resume-text">У вас есть незавершённое обращение</p>
+      <div class="resume-actions">
+        <button id="resume-continue" class="btn btn--primary" type="button">Продолжить</button>
+        <button id="resume-new" class="btn btn--ghost" type="button">Начать новое</button>
+      </div>
+    </div>
+
+    <!-- Прокручиваемая область: главный экран, лента диалога, «Мои обращения» —
+         показывается только один из этих экранов за раз, переключает app.js. -->
+    <main id="chat" class="chat">
+
+      <!-- Главный экран: логотип, приветствие, поле ввода, каталог категорий,
+           поиск по базе знаний -->
+      <section id="empty" class="empty">
+        <div class="empty-inner">
+          <!-- Плашка с логотипом компании.
+               ЛОГОТИП: файл кладётся в static/img/aktion-logo.png.
+               Если папка или имя файла другие — поменяйте src в строке ниже. -->
+          <div class="hero-logo">
+            <img src="/static/img/aktion-logo.png" alt="Актион" width="509" height="71">
+          </div>
+          <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
+          <p class="empty-text">
+            ИТ-поддержка сотрудников и студентов ТПУ: рабочее место, доступы, VPN,
+            почта, Wi-Fi, программы и оборудование. Опишите проблему своими
+            словами — помощник подберёт решение или передаст обращение специалисту.
+          </p>
+
+          <!-- Сюда встаёт поле ввода на главном экране. В диалоге app.js переносит его вниз, в #dock -->
+          <div id="hero-slot" class="hero-slot">
+            <div id="composer" class="composer">
+              <div class="composer-box">
+                <label for="input" class="visually-hidden">Опишите проблему</label>
+                <textarea id="input" rows="1" placeholder="Опишите проблему…" autocomplete="off"></textarea>
+                <span id="counter" class="counter" hidden aria-live="polite"></span>
+                <button id="send-btn" class="send-btn" type="button" aria-label="Отправить" disabled>
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- F1: семь категорий каталога услуг. Клик подставляет пример
+               в поле ввода — не отправляет сразу, человек может дописать своими словами. -->
+          <p class="catalog-title">Частые категории — нажмите, чтобы подставить пример:</p>
+          <div class="catalog">
+            <button type="button" class="catalog-tile" data-fill="Не включается компьютер на рабочем месте">
+              <span class="catalog-icon" aria-hidden="true">🖥️</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Рабочее место</span>
+                <span class="catalog-example">Не включается компьютер</span>
+              </span>
+            </button>
+            <button type="button" class="catalog-tile" data-fill="Нужен доступ к сетевой папке отдела">
+              <span class="catalog-icon" aria-hidden="true">🔑</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Доступы</span>
+                <span class="catalog-example">Нужен доступ к папке</span>
+              </span>
+            </button>
+            <button type="button" class="catalog-tile" data-fill="Не подключается корпоративный VPN">
+              <span class="catalog-icon" aria-hidden="true">🔒</span>
+              <span class="catalog-text">
+                <span class="catalog-name">VPN</span>
+                <span class="catalog-example">Не подключается VPN</span>
+              </span>
+            </button>
+            <button type="button" class="catalog-tile" data-fill="Не приходят письма на рабочую почту">
+              <span class="catalog-icon" aria-hidden="true">📧</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Корпоративная почта</span>
+                <span class="catalog-example">Не приходят письма</span>
+              </span>
+            </button>
+            <button type="button" class="catalog-tile" data-fill="Не подключается к корпоративному Wi-Fi">
+              <span class="catalog-icon" aria-hidden="true">📶</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Wi-Fi</span>
+                <span class="catalog-example">Не подключается Wi-Fi</span>
+              </span>
+            </button>
+            <button type="button" class="catalog-tile" data-fill="Не устанавливается программа на рабочий компьютер">
+              <span class="catalog-icon" aria-hidden="true">🧩</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Программное обеспечение</span>
+                <span class="catalog-example">Не устанавливается программа</span>
+              </span>
+            </button>
+            <button type="button" class="catalog-tile" data-fill="Не печатает принтер">
+              <span class="catalog-icon" aria-hidden="true">🖨️</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Оборудование</span>
+                <span class="catalog-example">Не печатает принтер</span>
+              </span>
+            </button>
+          </div>
+
+          <!-- F1: поиск по базе знаний, GET /api/kb/search -->
+          <div class="kb-search">
+            <label for="kb-search-input" class="visually-hidden">Поиск по базе знаний</label>
+            <div class="kb-search-box">
+              <span class="kb-search-icon" aria-hidden="true">🔎</span>
+              <input id="kb-search-input" type="text" placeholder="Поиск по базе знаний…" autocomplete="off">
+            </div>
+            <ul id="kb-search-results" class="kb-search-results" hidden></ul>
+            <p id="kb-count" class="kb-count" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Лента сообщений -->
+      <div id="feed" class="feed" role="log" aria-live="polite" aria-label="Диалог с помощником" hidden></div>
+
+      <!-- F5: список «Мои обращения» -->
+      <section id="history" class="history" hidden>
+        <div class="history-inner">
+          <h2 class="history-title">Мои обращения</h2>
+          <div id="history-list" class="history-list"></div>
+        </div>
+      </section>
+
+      <!-- F5: переписка одного обращения из истории (только чтение) -->
+      <section id="history-detail" class="history-detail" hidden>
+        <div class="history-detail-inner">
+          <div id="history-detail-feed" class="history-detail-feed"></div>
+          <div id="history-detail-actions" class="history-detail-actions"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Нижняя панель: сюда переезжает поле ввода, когда начался диалог -->
+    <footer id="dock" class="dock" hidden></footer>
+
+  </div>
+</body>
+</html>

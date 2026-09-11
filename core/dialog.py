@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 
@@ -26,9 +27,12 @@ from core.redact import redact
 from db import repo
 from db.models import Ticket, iso_utc
 from core import kb_store
+from kb import embeddings
 from kb.retriever import HybridRetriever
 from core import assist, demo_cache
 from llm import answerer, router
+
+log = logging.getLogger(__name__)
 
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
 MAX_CLARIFYING_QUESTIONS = int(os.getenv("MAX_CLARIFYING_QUESTIONS", "2"))
@@ -42,11 +46,44 @@ _by_title: dict[str, Article] = {}
 OTHER_QR = "Другое"
 
 
+def _build_retriever(articles: list[Article]) -> HybridRetriever:
+    """Поиск с эмбеддингами, если индекс на месте, иначе честный BM25.
+
+    Раньше здесь было просто `HybridRetriever(articles)` — без `embed_fn`,
+    то есть поиск был чисто лексическим, хотя класс умел больше. Теперь
+    вектора карточек берутся из заранее собранного `kb/emb_index.npz`.
+
+    Любая ошибка тут означает откат на BM25, а не отказ старта: приложение
+    обязано подниматься, даже если индекса нет или внешний сервис лежит.
+    """
+    try:
+        embed_fn = embeddings.make_embed_fn()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("индекс эмбеддингов не загрузился: %s", exc)
+        embed_fn = None
+
+    if embed_fn is not None:
+        try:
+            retriever = HybridRetriever(articles, embed_fn=embed_fn)
+            log.info("поиск по базе знаний: гибридный (BM25 + эмбеддинги, RRF)")
+            return retriever
+        except Exception as exc:  # noqa: BLE001
+            log.warning("эмбеддинги недоступны, поиск работает на BM25: %s", exc)
+
+    log.info("поиск по базе знаний: лексический (BM25)")
+    return HybridRetriever(articles)
+
+
+def search_mode() -> str:
+    """Режим поиска для README, аналитики и ответов на защите."""
+    return "hybrid" if (_retriever is not None and _retriever.semantic) else "bm25"
+
+
 def reload_kb() -> int:
     """Перечитать базу знаний. Вызывается на старте и после правок из панели."""
     global _articles, _retriever, _by_id, _by_title
     _articles = kb_store.all_articles()
-    _retriever = HybridRetriever(_articles)
+    _retriever = _build_retriever(_articles)
     _by_id = {a.id: a for a in _articles}
     # Заголовок → статья: по нему узнаём вариант, который пользователь выбрал
     # кнопкой на экране уточнения. Тогда ни поиск, ни модель уже не нужны.
@@ -305,8 +342,18 @@ def _assist(db: Session, ticket: Ticket, user_text: str,
                    {"query": safe_text[:300], "category": ticket.category,
                     "article_id": ticket.article_id})
 
-    answer = assist.general_help(safe_text, ticket.category or "не определено")
+    # Шаги, которые пользователь уже видел и которые ему не помогли.
+    # Без этого модель их повторяла: в general_help уходил только текст
+    # обращения и категория, и не повторить показанное она физически не могла.
+    try:
+        already_shown = json.loads(ticket.steps_json or "[]")
+    except ValueError:
+        already_shown = []
+
+    answer = assist.general_help(safe_text, ticket.category or "не определено",
+                                 exclude_steps=already_shown)
     if answer is None:
+        # Нечего добавить сверх того, что уже не помогло, — зовём человека.
         return _escalate(db, ticket, "подходящая статья не найдена")
 
     ticket.assist_used = True

@@ -23,6 +23,37 @@ _client = OpenAI(
 
 MODEL_FAST = os.getenv("LLM_MODEL_FAST")
 MODEL_SMART = os.getenv("LLM_MODEL_SMART")
+# Модель векторизации для поиска по смыслу. Провайдер тот же, эндпоинт другой.
+MODEL_EMBED = os.getenv("LLM_MODEL_EMBED", "text-embedding-3-small")
+
+
+def embed(texts: list[str], model: str | None = None) -> list[list[float]]:
+    """Вектора для списка текстов.
+
+    В отличие от chat(), эта функция НЕ глотает ошибки, а бросает исключение.
+    Так задумано: при сборке индекса молчаливый провал дал бы пустой индекс,
+    а в бою решение «откатиться на BM25 или упасть» принимает kb/embeddings.py,
+    и принять его можно, только увидев ошибку.
+    """
+    if not texts:
+        return []
+    model = model or MODEL_EMBED
+    last: Exception | None = None
+    for attempt, pause in enumerate((0, 1, 3)):
+        if pause:
+            time.sleep(pause)
+        try:
+            t0 = time.monotonic()
+            resp = _client.embeddings.create(model=model, input=texts)
+            log.info("embed ok model=%s n=%s attempt=%s %.2fs",
+                     model, len(texts), attempt, time.monotonic() - t0)
+            # Порядок ответа провайдер не гарантирует — раскладываем по index.
+            ordered = sorted(resp.data, key=lambda d: d.index)
+            return [list(d.embedding) for d in ordered]
+        except Exception as exc:  # noqa: BLE001
+            log.warning("embed fail model=%s attempt=%s: %s", model, attempt, exc)
+            last = exc
+    raise RuntimeError(f"не удалось получить эмбеддинги моделью {model}: {last}")
 
 
 def chat(messages: list[dict], model: str | None = None,

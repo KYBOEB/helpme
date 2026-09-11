@@ -1,6 +1,7 @@
 """Гибридный поиск по базе знаний: BM25 (+ опционально эмбеддинги через RRF)."""
 from __future__ import annotations
 
+import logging
 from typing import Callable, Optional
 
 import numpy as np
@@ -9,6 +10,7 @@ from rank_bm25 import BM25Okapi
 from common.models import Article
 from kb.normalize import tokenize
 
+log = logging.getLogger(__name__)
 
 EmbedFn = Callable[[list[str]], np.ndarray]
 _RRF_K = 60
@@ -72,6 +74,15 @@ class HybridRetriever:
             norms[norms == 0] = 1.0
             self._emb_matrix = emb / norms
 
+    @property
+    def semantic(self) -> bool:
+        """Работает ли поиск по смыслу, или это чистая лексика.
+
+        Нужно наружу: в README и на защите про режим поиска говорим то, что
+        есть на самом деле, а не то, что задумывалось.
+        """
+        return self._emb_matrix is not None and self.embed_fn is not None
+
     # ---------- публичный API ----------
 
     def search(self, query: str, top_k: int = 5) -> list[tuple[Article, float]]:
@@ -87,9 +98,16 @@ class HybridRetriever:
         if bm25_ranking:
             rankings.append(bm25_ranking)
 
-        # 2. Эмбеддинги → второй ранжированный список
-        if self._emb_matrix is not None and self.embed_fn is not None:
-            emb_ranking = self._embedding_ranking(query)
+        # 2. Эмбеддинги → второй ранжированный список.
+        #    Векторизация запроса ходит в сеть, а сеть иногда отваливается.
+        #    Поиск обязан пережить это молча и отдать хотя бы лексический
+        #    результат: пустая выдача выглядит как «система не работает».
+        if self.semantic:
+            try:
+                emb_ranking = self._embedding_ranking(query)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("векторный поиск недоступен, остаётся BM25: %s", exc)
+                emb_ranking = []
             if emb_ranking:
                 rankings.append(emb_ranking)
 
