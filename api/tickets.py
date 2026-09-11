@@ -10,6 +10,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from core import security
 from core.auth import require_operator
 from db import repo
+from db.models import iso_utc
 
 router = APIRouter(prefix="/api", tags=["tickets"])
 
@@ -17,7 +18,9 @@ router = APIRouter(prefix="/api", tags=["tickets"])
 def _brief(t) -> dict:
     return {
         "ticket_id": t.id,
-        "created_at": t.created_at.isoformat(),
+        "public_no": t.public_no,
+        "created_at": iso_utc(t.created_at),
+        "updated_at": iso_utc(t.updated_at),
         "state": t.state,
         "category": t.category,
         "article_id": t.article_id,
@@ -28,6 +31,7 @@ def _brief(t) -> dict:
         "operator_taken": t.operator_taken,
         "needs_specialist": t.needs_specialist,
         "out_of_scope": bool(t.out_of_scope),
+        "closed_by_user": bool(t.closed_by_user),
         "user_actions_count": t.user_actions_count,
         "rating": t.rating,
     }
@@ -96,6 +100,26 @@ def operator_reply(ticket_id: str, payload: dict = Body(...)) -> dict:
         db.close()
 
 
+@router.post("/tickets/{ticket_id}/resolve", dependencies=[Depends(require_operator)])
+def resolve_by_operator(ticket_id: str) -> dict:
+    """Специалист завершил работу по обращению."""
+    db = repo.get_session()
+    try:
+        t = repo.get_ticket(db, ticket_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="Обращение не найдено")
+        t.state = "RESOLVED"
+        t.needs_specialist = False
+        t.operator_taken = True
+        t.resolved_by_bot = False       # решил человек, а не бот
+        t.resolution = t.resolution or "закрыто специалистом"
+        repo.log_event(db, ticket_id, "resolved_by_operator")
+        db.commit()
+        return {"ok": True, "state": t.state}
+    finally:
+        db.close()
+
+
 @router.get("/tickets/{ticket_id}", dependencies=[Depends(require_operator)])
 def get_ticket(ticket_id: str) -> dict:
     db = repo.get_session()
@@ -115,9 +139,13 @@ def get_ticket(ticket_id: str) -> dict:
 
 @router.post("/tickets/{ticket_id}/rate")
 def rate(ticket_id: str, payload: dict = Body(...)) -> dict:
+    # Оценка бинарная: 1 — ответ помог, 0 — не помог. Из неё считается
+    # доля полезных ответов в процентах. Средний балл по пятибалльной шкале
+    # на таком объёме ничего не означал бы.
     rating = payload.get("rating")
-    if not isinstance(rating, int) or not 1 <= rating <= 5:
-        raise HTTPException(status_code=422, detail="rating должен быть числом от 1 до 5")
+    if rating not in (0, 1) or isinstance(rating, bool):
+        raise HTTPException(status_code=422,
+                            detail="rating должен быть 1 (помогло) или 0 (не помогло)")
     db = repo.get_session()
     try:
         t = repo.get_ticket(db, ticket_id)
@@ -147,27 +175,72 @@ def escalate(ticket_id: str, payload: dict = Body(default={})) -> dict:
         db.close()
 
 
+@router.post("/tickets/{ticket_id}/close")
+def close_by_user(ticket_id: str, payload: dict = Body(default={})) -> dict:
+    """Пользователь вышел из диалога — обращение закрывается.
+
+    Без этого брошенные обращения висели в панели как активные, и оператор
+    не мог отличить их от тех, где человек действительно ждёт ответа.
+    Обращение, которое уже взял в работу специалист, не трогаем: он ведёт
+    переписку и закроет её сам.
+    """
+    db = repo.get_session()
+    try:
+        t = repo.get_ticket(db, ticket_id)
+        security.check_owner(t, payload.get("token"))
+        if t.state in ("RESOLVED",) or t.operator_taken:
+            return {"ok": True, "state": t.state}
+        t.state = "RESOLVED"
+        t.closed_by_user = True
+        t.resolved_by_bot = False
+        t.needs_specialist = False
+        t.resolution = "закрыто пользователем: вышел из диалога"
+        repo.log_event(db, ticket_id, "closed_by_user")
+        db.commit()
+        return {"ok": True, "state": t.state}
+    finally:
+        db.close()
+
+
+# Окна для выбора периода на вкладке «Аналитика»
+_PERIODS = {"day": 1, "week": 7, "month": 30, "all": None}
+
+
 @router.get("/stats", dependencies=[Depends(require_operator)])
-def stats() -> dict:
+def stats(period: str = "all") -> dict:
     """Метрики дашборда. Главная — среднее число действий пользователя."""
+    import datetime as _dt
+
+    days = _PERIODS.get(period, None)
+    # created_at лежит в базе без часового пояса, поэтому и границу считаем
+    # в UTC без пояса — иначе сравнение упадёт на разнице типов.
+    since = (_dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+             - _dt.timedelta(days=days)) if days else None
+
     db = repo.get_session()
     try:
         tickets = repo.list_tickets(db, limit=10000)
+        if since is not None:
+            tickets = [t for t in tickets if t.created_at >= since]
         rejected = [t for t in tickets if t.out_of_scope]
         # Нецелевые обращения не участвуют в доле решённых: они не были задачами
         # поддержки, и портить ими метрику так же нечестно, как ею хвастаться.
         finished = [t for t in tickets
                     if t.state in ("RESOLVED", "ESCALATED") and not t.out_of_scope]
         solved = [t for t in finished if t.resolved_by_bot]
-        rated = [t.rating for t in tickets if t.rating]
+        # Оценка бинарная: 1 — помогло, 0 — нет. Считаем долю полезных ответов.
+        rated = [t.rating for t in tickets if t.rating is not None]
         actions = [t.user_actions_count for t in solved]
 
         # среднее время от создания обращения до первого шага решения
         from db.models import Event
+        ids = {t.id for t in tickets}
         first_step: list[float] = []
         created = {e.ticket_id: e.created_at for e in
                    db.query(Event).filter(Event.type == "created").all()}
         for e in db.query(Event).filter(Event.type.in_(("solved", "assisted"))).all():
+            if e.ticket_id not in ids:
+                continue                      # обращение вне выбранного периода
             start = created.get(e.ticket_id)
             if start:
                 first_step.append((e.created_at - start).total_seconds() * 1000)
@@ -184,8 +257,11 @@ def stats() -> dict:
             "resolved_by_bot_share": round(len(solved) / len(finished), 3) if finished else 0.0,
             "avg_user_actions": round(sum(actions) / len(actions), 2) if actions else 0.0,
             "by_category": dict(Counter(t.category for t in tickets if t.category)),
-            "avg_rating": round(sum(rated) / len(rated), 2) if rated else None,
+            # доля ответов, которые пользователи отметили как полезные, 0..1
+            "usefulness": round(sum(rated) / len(rated), 3) if rated else None,
             "ratings_count": len(rated),
+            "period": period if period in _PERIODS else "all",
+            "closed_by_user": len([t for t in tickets if t.closed_by_user]),
             # дублируем под именами, которые использует панель
             "total_count": len(tickets),
             "resolved_by_bot_count": len(solved),
@@ -253,7 +329,7 @@ def kb_gaps(limit: int = 100) -> list[dict]:
                 "kind": "нет статьи" if e.type == "kb_gap" else "статья не помогла",
                 "article_id": payload.get("article_id"),
                 "ticket_id": e.ticket_id,
-                "created_at": e.created_at.isoformat(),
+                "created_at": iso_utc(e.created_at),
                 "query": payload.get("query", ""),
                 "category": payload.get("category"),
             })

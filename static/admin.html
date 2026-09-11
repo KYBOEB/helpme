@@ -24,6 +24,10 @@
         </button>
         <button class="tab" data-tab="analytics" role="tab">Аналитика</button>
         <button class="tab" data-tab="kb" role="tab">База знаний</button>
+        <!-- Появляется, когда оператор открыл обращение -->
+        <button class="tab tab--ticket" data-tab="ticket" role="tab" id="tab-btn-ticket" hidden>
+          Обращение <span id="tab-ticket-no"></span>
+        </button>
       </nav>
     </header>
 
@@ -40,12 +44,13 @@
               <option value="resolved_by_bot">Решено ботом</option>
               <option value="escalated">Передано специалисту</option>
               <option value="in_progress">В работе</option>
+              <option value="closed">Закрыто</option>
             </select>
           </label>
           <label>Поиск
             <input id="filter-search" type="search" placeholder="Текст обращения…" />
           </label>
-          <button id="btn-refresh" class="btn">Обновить</button>
+          <button id="btn-refresh" class="btn btn--soft">Обновить</button>
         </div>
 
         <div class="table-wrap">
@@ -74,6 +79,16 @@
 
       <!-- ===================== ВКЛАДКА 3: АНАЛИТИКА ===================== -->
       <section id="tab-analytics" class="tab-panel" role="tabpanel">
+        <div class="period-bar">
+          <label for="period-select">Период</label>
+          <select id="period-select">
+            <option value="day">За сутки</option>
+            <option value="week">За неделю</option>
+            <option value="month">За месяц</option>
+            <option value="all" selected>За всё время</option>
+          </select>
+        </div>
+
         <div class="hero-metric">
           <div class="hero-value" id="metric-actions">—</div>
           <div class="hero-label">среднее число действий пользователя до решения</div>
@@ -101,9 +116,9 @@
           </div>
 
           <div class="card">
-            <h3>Средняя оценка ответа</h3>
-            <div class="stat-value" id="metric-rating">—</div>
-            <p class="muted">Оценок: <span id="metric-rating-count">—</span></p>
+            <h3>Полезность ответов</h3>
+            <div class="stat-value" id="metric-usefulness">—</div>
+            <p class="muted">👍 из <span id="metric-rating-count">—</span> оценок</p>
           </div>
 
           <div class="card">
@@ -127,101 +142,120 @@
 
       <!-- ===================== ВКЛАДКА 4: БАЗА ЗНАНИЙ ===================== -->
       <section id="tab-kb" class="tab-panel" role="tabpanel">
-<div id="kb-form-slot">
-        <h2 class="section-title">Добавить статью в базу знаний</h2>
-        <p class="panel-note">
-          Статья попадёт в поиск сразу — перезапуск не нужен.
-        </p>
-        <form id="kb-form" class="kb-form" novalidate>
-          <div class="kb-field">
-            <label for="kb-category">Категория</label>
-            <select id="kb-category" name="category" required>
-              <option value="" disabled selected>Выберите категорию</option>
-              <option value="рабочее место">Рабочее место</option>
-              <option value="доступы">Доступы</option>
-              <option value="VPN">VPN</option>
-              <option value="корпоративная почта">Корпоративная почта</option>
-              <option value="Wi-Fi">Wi-Fi</option>
-              <option value="программное обеспечение">Программное обеспечение</option>
-              <option value="оборудование">Оборудование</option>
-            </select>
-          </div>
-
-          <div class="kb-field">
-            <label for="kb-title">Заголовок статьи</label>
-            <input id="kb-title" name="title" type="text" required
-                   placeholder="Например: Не работает кофемашина">
-          </div>
-
-          <div class="kb-field">
-            <div class="kb-field-head">
-              <label>Симптомы — как пользователь опишет проблему</label>
-              <button type="button" class="kb-add" data-add="symptoms">+ Добавить</button>
-            </div>
-            <div id="kb-symptoms" class="kb-list"></div>
-            <p class="kb-hint">Нужен хотя бы один — по этим фразам помощник найдёт статью.</p>
-          </div>
-
-          <div class="kb-field">
-            <div class="kb-field-head">
-              <label>Шаги решения</label>
-              <button type="button" class="kb-add" data-add="steps">+ Добавить шаг</button>
-            </div>
-            <div id="kb-steps" class="kb-list"></div>
-            <p class="kb-hint">Можно оставить пустыми — тогда обращение сразу уйдёт специалисту.</p>
-          </div>
-
-          <div class="kb-field">
-            <label for="kb-escalate">Когда сразу звать специалиста (необязательно)</label>
-            <input id="kb-escalate" name="escalate_if" type="text"
-                   placeholder="Например: аппарат искрит">
-          </div>
-
-          <p id="kb-error" class="kb-error" role="alert" hidden></p>
-          <p id="kb-success" class="kb-success" role="status" hidden></p>
-
-          <div class="kb-actions">
-            <button type="submit" id="kb-submit" class="kb-submit">Добавить статью</button>
-          </div>
-        </form>
+        <div class="filters">
+          <label>Поиск по базе знаний
+            <input id="kb-search" type="search" placeholder="Например: почта, VPN, пароль…" />
+          </label>
+          <button id="kb-btn" class="btn btn--soft">Найти</button>
+          <button id="kb-open-form" class="btn btn--primary">+ Добавить карточку</button>
         </div>
+        <div id="kb-results" class="kb-results"></div>
 
         <h2 class="section-title">Пробелы базы знаний</h2>
         <p class="panel-note">
           Обращения, для которых статьи не нашлось. Готовый список тем для новых карточек.
         </p>
         <div id="kb-gaps" class="gaps"></div>
+      </section>
 
-        <h2 class="section-title">Поиск по базе</h2>
-        <div class="filters">
-          <label>Запрос
-            <input id="kb-search" type="search" placeholder="Например: почта, VPN, пароль…" />
-          </label>
-          <button id="kb-btn" class="btn">Найти</button>
+      <!-- ============ ВКЛАДКА 5: ОТКРЫТОЕ ОБРАЩЕНИЕ ============ -->
+      <!-- Полноэкранная вкладка вместо модального окна: слева переписка,
+           справа карточка и действия. -->
+      <section id="tab-ticket" class="tab-panel" role="tabpanel">
+        <div class="ticket-view">
+          <div class="ticket-chat">
+            <div class="ticket-chat-head">
+              <button id="btn-back-to-list" class="btn btn--soft">← К списку</button>
+              <span id="ticket-chat-title" class="ticket-chat-title">Обращение</span>
+            </div>
+            <div id="ticket-log" class="dialog-log ticket-log"></div>
+            <div id="ticket-reply" class="ticket-reply"></div>
+          </div>
+
+          <aside class="ticket-side">
+            <!-- Действия сверху: оператору не надо прокручивать карточку,
+                 чтобы завершить обращение или скачать его -->
+            <div class="ticket-side-actions">
+              <button id="btn-close-ticket" class="btn btn--primary">Завершить обращение</button>
+              <button id="btn-download-json" class="btn btn--soft">Скачать JSON</button>
+              <label class="switch">
+                <input type="checkbox" id="toggle-share" />
+                <span>Открыть доступ по ссылке</span>
+              </label>
+              <button id="btn-copy-link" class="btn btn--soft">Копировать ссылку</button>
+              <p id="ticket-action-status" class="reply-status" role="status"></p>
+            </div>
+            <div id="ticket-info"></div>
+          </aside>
         </div>
-        <div id="kb-results" class="kb-results"></div>
       </section>
     </main>
 
-    <!-- ===================== БОКОВАЯ ПАНЕЛЬ ===================== -->
-    <aside id="drawer" class="drawer hidden" aria-hidden="true">
-      <div class="drawer-head">
-        <h2 id="drawer-title">Обращение</h2>
-        <button id="drawer-close" class="btn-ghost" aria-label="Закрыть">×</button>
+    <!-- =============== ОКНО ДОБАВЛЕНИЯ КАРТОЧКИ =============== -->
+    <div id="kb-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-window" role="dialog" aria-modal="true" aria-labelledby="kb-modal-title">
+        <div class="modal-head">
+          <h2 id="kb-modal-title">Добавить статью в базу знаний</h2>
+          <button class="btn-ghost" data-close-modal aria-label="Закрыть">×</button>
+        </div>
+        <div class="modal-body" id="kb-form-slot">
+          <p class="panel-note">Статья попадёт в поиск сразу — перезапуск не нужен.</p>
+          <form id="kb-form" class="kb-form" novalidate>
+            <div class="kb-field">
+              <label for="kb-category">Категория</label>
+              <select id="kb-category" name="category" required>
+                <option value="" disabled selected>Выберите категорию</option>
+                <option value="рабочее место">Рабочее место</option>
+                <option value="доступы">Доступы</option>
+                <option value="VPN">VPN</option>
+                <option value="корпоративная почта">Корпоративная почта</option>
+                <option value="Wi-Fi">Wi-Fi</option>
+                <option value="программное обеспечение">Программное обеспечение</option>
+                <option value="оборудование">Оборудование</option>
+              </select>
+            </div>
+
+            <div class="kb-field">
+              <label for="kb-title">Заголовок статьи</label>
+              <input id="kb-title" name="title" type="text" required
+                     placeholder="Например: Не работает кофемашина">
+            </div>
+
+            <div class="kb-field">
+              <div class="kb-field-head">
+                <label>Симптомы — как пользователь опишет проблему</label>
+                <button type="button" class="kb-add" data-add="symptoms">+ Добавить</button>
+              </div>
+              <div id="kb-symptoms" class="kb-list"></div>
+              <p class="kb-hint">Нужен хотя бы один — по этим фразам помощник найдёт статью.</p>
+            </div>
+
+            <div class="kb-field">
+              <div class="kb-field-head">
+                <label>Шаги решения</label>
+                <button type="button" class="kb-add" data-add="steps">+ Добавить шаг</button>
+              </div>
+              <div id="kb-steps" class="kb-list"></div>
+              <p class="kb-hint">Можно оставить пустыми — тогда обращение сразу уйдёт специалисту.</p>
+            </div>
+
+            <div class="kb-field">
+              <label for="kb-escalate">Когда сразу звать специалиста (необязательно)</label>
+              <input id="kb-escalate" name="escalate_if" type="text"
+                     placeholder="Например: аппарат искрит">
+            </div>
+
+            <p id="kb-error" class="kb-error" role="alert" hidden></p>
+            <p id="kb-success" class="kb-success" role="status" hidden></p>
+
+            <div class="kb-actions">
+              <button type="submit" id="kb-submit" class="kb-submit">Добавить статью</button>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="drawer-body" id="drawer-body"></div>
-      <!-- Ответ пользователю — отдельной полосой, чтобы форма не уезжала
-           за пределы экрана в длинной переписке -->
-      <div class="drawer-reply" id="drawer-reply"></div>
-      <div class="drawer-foot">
-        <button id="btn-download-json" class="btn">Скачать JSON</button>
-        <label class="switch">
-          <input type="checkbox" id="toggle-share" />
-          <span>Открыть доступ по ссылке</span>
-        </label>
-        <button id="btn-copy-link" class="btn">Копировать ссылку</button>
-      </div>
-    </aside>
+    </div>
 
     <script src="/static/admin.js" defer></script>
   </body>

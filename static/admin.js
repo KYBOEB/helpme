@@ -6,7 +6,8 @@ const API = {
   ticket: (id) => `/api/tickets/${id}`,
   take: (id) => `/api/tickets/${id}/take`,
   reply: (id) => `/api/tickets/${id}/reply`,
-  stats: "/api/stats",
+  closeByOperator: (id) => `/api/tickets/${id}/resolve`,
+  stats: (period) => `/api/stats?period=${encodeURIComponent(period || "all")}`,
   kbSearch: (q) => `/api/kb/search?q=${encodeURIComponent(q)}`,
   kbGaps: "/api/kb/gaps",
   kbCreate: "/api/kb/articles",
@@ -20,7 +21,7 @@ const state = {
   filtered: [],
   activeTicketId: null,
   activeTab: "tickets",
-  drawerTimer: null,      // автообновление открытой карточки
+  ticketTimer: null,      // автообновление открытого обращения
   queueSignature: null,   // состав очереди на прошлом опросе
 };
 
@@ -68,6 +69,11 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
 }
 
+function fmtTime(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
 function pct(x) {
   return `${Math.round((x ?? 0) * 100)}%`;
 }
@@ -87,6 +93,7 @@ function confidenceText(t) {
 
 function statusInfo(t) {
   if (t.out_of_scope) return { text: "Закрыто: не по теме", cls: "badge--muted" };
+  if (t.closed_by_user) return { text: "Пользователь вышел", cls: "badge--muted" };
   if (t.needs_specialist && !t.operator_taken) return { text: "Ждёт специалиста", cls: "badge--warn" };
   if (t.needs_specialist && t.operator_taken) return { text: "У специалиста", cls: "badge--info" };
   if (t.resolved_by_bot) return { text: "Решено ботом", cls: "badge--ok" };
@@ -95,6 +102,7 @@ function statusInfo(t) {
 }
 
 function statusKey(t) {
+  if (t.out_of_scope || t.closed_by_user) return "closed";
   if (t.needs_specialist) return "escalated";
   if (t.resolved_by_bot) return "resolved_by_bot";
   return "in_progress";
@@ -175,7 +183,7 @@ function renderTickets() {
     const s = statusInfo(t);
     const tr = el("tr", { "data-id": t.ticket_id });
     tr.append(
-      el("td", { text: t.ticket_id ?? "—" }),
+      el("td", { text: t.public_no ? `№${t.public_no}` : (t.ticket_id ?? "—"), title: t.ticket_id ?? "" }),
       el("td", { text: fmtDate(t.created_at) }),
       el("td", {}, [
         el("span", { text: t.category ?? "—" }),
@@ -188,9 +196,9 @@ function renderTickets() {
                                      : "Статья в базе знаний не подобрана" }),
       el("td", {}, [el("span", { class: `badge ${s.cls}`, text: s.text })]),
       el("td", { text: String(t.user_actions_count ?? "—") }),
-      el("td", { text: t.rating != null ? String(t.rating) : "—" }),
+      el("td", { text: t.rating == null ? "—" : (t.rating ? "👍" : "👎") }),
     );
-    tr.addEventListener("click", () => openDrawer(t.ticket_id));
+    tr.addEventListener("click", () => openTicket(t.ticket_id));
     tbody.append(tr);
   }
 }
@@ -251,7 +259,7 @@ function renderQueue(items) {
   for (const t of items) {
     const card = el("article", { class: "queue-item" });
     const head = el("div", { class: "queue-head" }, [
-      el("span", { class: "queue-id", text: t.ticket_id }),
+      el("span", { class: "queue-id", text: t.public_no ? `№${t.public_no}` : t.ticket_id }),
       el("span", { class: "badge badge--info", text: t.category ?? "не определено" }),
       ...(t.assist_used
         ? [el("span", { class: "badge badge--warn", text: "нет статьи в базе" })]
@@ -259,20 +267,19 @@ function renderQueue(items) {
       el("span", { class: "queue-time", text: fmtDate(t.created_at) }),
     ]);
 
-    const btn = el("button", { class: "btn", text: "Взять в работу" });
+    const btn = el("button", { class: "btn btn--primary", text: "Взять в работу" });
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       btn.disabled = true;
       try {
         await apiPost(API.take(t.ticket_id));
-        card.remove();
-        const left = document.querySelectorAll("#queue-list .queue-item").length;
-        document.getElementById("queue-count").textContent = String(left);
-        state.queueSignature = null;   // состав очереди изменился нами
-        if (!left) loadQueue();
+        state.queueSignature = null;      // состав очереди изменился нами
+        // Взял в работу — сразу открываем диалог. Раньше карточка просто
+        // исчезала из очереди, и специалисту приходилось искать её заново.
+        openTicket(t.ticket_id);
       } catch {
         btn.disabled = false;
-        alert("Не удалось взять обращение");
+        document.getElementById("queue-count").title = "Не удалось взять обращение";
       }
     });
 
@@ -281,110 +288,146 @@ function renderQueue(items) {
       el("p", { class: "queue-summary", text: t.problem_summary || "без описания" }),
       el("div", { class: "queue-actions" }, [btn]),
     );
-    card.addEventListener("click", () => openDrawer(t.ticket_id));
+    card.addEventListener("click", () => openTicket(t.ticket_id));
     box.append(card);
   }
 }
 
-/* ---------- Боковая панель ---------- */
+/* ---------- Вкладка открытого обращения ----------
+   Раньше карточка открывалась модальным окном: узкая колонка, в которой
+   переписка, шаги и форма ответа не помещались одновременно. Теперь это
+   полноценная вкладка — слева диалог, справа карточка и действия. */
 
-async function openDrawer(id) {
+const TICKET_REFRESH_MS = 8000;
+
+function ticketTitle(card) {
+  return card.public_no ? `№${card.public_no}` : (card.ticket_id || "");
+}
+
+async function openTicket(id) {
   state.activeTicketId = id;
-  const drawer = document.getElementById("drawer");
-  const body = document.getElementById("drawer-body");
-  document.getElementById("drawer-title").textContent = `Обращение ${id}`;
-  body.innerHTML = '<p class="muted">Загрузка…</p>';
-  document.getElementById("drawer-reply").replaceChildren();
-  drawer.classList.remove("hidden");
-  drawer.setAttribute("aria-hidden", "false");
+  const btn = document.getElementById("tab-btn-ticket");
+  btn.hidden = false;
+  switchTab("ticket");
 
+  document.getElementById("ticket-log").innerHTML =
+    '<p class="muted">Загрузка…</p>';
+  document.getElementById("ticket-reply").replaceChildren();
+  document.getElementById("ticket-info").replaceChildren();
+  document.getElementById("ticket-action-status").textContent = "";
   document.getElementById("toggle-share").checked = false;
 
   try {
-    renderDrawer(await apiGet(API.ticket(id)));
-    startDrawerRefresh(id);
+    renderTicket(await apiGet(API.ticket(id)));
+    startTicketRefresh(id);
   } catch {
-    body.innerHTML = '<p class="muted">Не удалось загрузить карточку</p>';
+    document.getElementById("ticket-log").innerHTML =
+      '<p class="muted">Не удалось загрузить обращение</p>';
   }
 }
 
-/* Пока панель открыта, подтягиваем ответы пользователя: специалист ведёт
-   диалог здесь и не должен жать F5, чтобы увидеть реплику. */
-const DRAWER_REFRESH_MS = 8000;
-
-function stopDrawerRefresh() {
-  if (state.drawerTimer) clearInterval(state.drawerTimer);
-  state.drawerTimer = null;
+function closeTicketView() {
+  stopTicketRefresh();
+  state.activeTicketId = null;
+  document.getElementById("tab-btn-ticket").hidden = true;
+  document.getElementById("tab-ticket-no").textContent = "";
+  switchTab("tickets");
 }
 
-function startDrawerRefresh(id) {
-  stopDrawerRefresh();
-  state.drawerTimer = setInterval(async () => {
-    if (state.activeTicketId !== id) return stopDrawerRefresh();
-    // Не перерисовываем панель, пока специалист печатает ответ:
-    // иначе набранный текст пропал бы у него из-под рук.
-    const area = document.querySelector("#drawer-reply textarea");
-    if (area && (area.value.trim() || document.activeElement === area)) return;
-    try {
-      renderDrawer(await apiGet(API.ticket(id)));
-    } catch { /* сеть моргнула — попробуем на следующем тике */ }
-  }, DRAWER_REFRESH_MS);
-}
-
-function renderDrawer(card) {
-  const body = document.getElementById("drawer-body");
-  body.innerHTML = "";
+function renderTicket(card) {
   const s = statusInfo(card);
+  document.getElementById("tab-ticket-no").textContent = ticketTitle(card);
+  document.getElementById("ticket-chat-title").textContent =
+    `Обращение ${ticketTitle(card)} · ${card.category || "без категории"}`;
 
-  body.append(el("h3", { text: "Карточка" }));
+  // ----- карточка справа -----
+  const info = document.getElementById("ticket-info");
+  info.replaceChildren();
+  info.append(el("h3", { text: "Карточка" }));
+
   const dl = el("dl", { class: "card-dl" });
   const rows = [
+    ["Статус", s.text],
     ["Категория", card.category],
+    ["Проблема", card.problem_summary],
     ["Статья", card.article_id],
     ["Уверенность в статье", confidenceText(card)],
-    ["Статус", s.text],
     ["Действий пользователя", card.user_actions_count],
-    ["Оценка", card.rating],
+    ["Создано", fmtDate(card.created_at)],
+    ["Оценка", card.rating == null ? "—"
+              : (card.rating ? "👍 помогло" : "👎 не помогло")],
   ];
-  if (card.assist_used) rows.push(["Источник ответа", "общая рекомендация, статьи в базе нет"]);
+  if (card.assist_used) rows.push(["Источник ответа", "совет ИИ-ассистента, статьи в базе нет"]);
   if (card.out_of_scope) rows.push(["Закрыто системой", "обращение вне тематики поддержки"]);
+  if (card.closed_by_user) rows.push(["Закрыто", "пользователь вышел из диалога"]);
   for (const [label, value] of rows) {
     dl.append(el("dt", { text: label }), el("dd", { text: String(value ?? "—") }));
   }
-  body.append(dl);
+  info.append(dl);
 
   const slots = Object.entries(card.slots ?? {});
   if (slots.length) {
-    body.append(el("h3", { text: "Ответы пользователя" }));
+    info.append(el("h3", { text: "Ответы пользователя" }));
     const sdl = el("dl", { class: "card-dl" });
     for (const [k, v] of slots) sdl.append(el("dt", { text: k }), el("dd", { text: String(v) }));
-    body.append(sdl);
+    info.append(sdl);
   }
 
   const steps = card.steps ?? [];
   if (steps.length) {
-    body.append(el("h3", { text: "Выданные шаги" }));
-    body.append(el("ol", { class: "drawer-steps" }, steps.map((x) => el("li", { text: x }))));
+    info.append(el("h3", { text: "Выданные шаги" }));
+    info.append(el("ol", { class: "drawer-steps" }, steps.map((x) => el("li", { text: x }))));
   }
 
-  body.append(el("h3", { text: "Переписка" }));
-  const log = el("div", { class: "dialog-log" });
+  // ----- переписка слева -----
+  const log = document.getElementById("ticket-log");
+  log.replaceChildren();
   for (const m of card.messages ?? []) {
-    // сервер отдаёт content, не text
     const cls = m.role === "user" ? "msg msg-user"
               : m.role === "operator" ? "msg msg-operator"
               : "msg msg-bot";
-    log.append(el("div", { class: cls, text: m.content ?? "" }));
+    const row = el("div", { class: cls }, [
+      el("span", { class: "msg-text", text: m.content ?? "" }),
+    ]);
+    if (m.created_at) {
+      row.append(el("span", { class: "msg-time", text: fmtTime(m.created_at) }));
+    }
+    log.append(row);
   }
-  body.append(log);
-  log.scrollTop = log.scrollHeight;      // показываем последнюю реплику
+  log.scrollTop = log.scrollHeight;
 
-  const replyHost = document.getElementById("drawer-reply");
-  replyHost.replaceChildren(renderReplyBox(card));
+  document.getElementById("ticket-reply").replaceChildren(renderReplyBox(card));
+
+  // Завершать уже закрытое обращение незачем
+  const closeBtn = document.getElementById("btn-close-ticket");
+  const finished = card.state === "RESOLVED";
+  closeBtn.disabled = finished;
+  closeBtn.textContent = finished ? "Обращение завершено" : "Завершить обращение";
+}
+
+function stopTicketRefresh() {
+  if (state.ticketTimer) clearInterval(state.ticketTimer);
+  state.ticketTimer = null;
+}
+
+/* Пока вкладка открыта, подтягиваем ответы пользователя: специалист ведёт
+   диалог здесь и не должен нажимать F5, чтобы увидеть реплику. */
+function startTicketRefresh(id) {
+  stopTicketRefresh();
+  state.ticketTimer = setInterval(async () => {
+    if (state.activeTicketId !== id || state.activeTab !== "ticket") return;
+    // Не перерисовываем, пока специалист печатает: иначе набранный текст
+    // пропал бы у него из-под рук.
+    const area = document.querySelector("#ticket-reply textarea");
+    if (area && (area.value.trim() || document.activeElement === area)) return;
+    try {
+      renderTicket(await apiGet(API.ticket(id)));
+    } catch { /* сеть моргнула — попробуем на следующем тике */ }
+  }, TICKET_REFRESH_MS);
 }
 
 /**
- * Ответ специалиста пользователю прямо отсюда.
+ * Ответ специалиста пользователю.
  *
  * Как только специалист написал, обращение считается взятым в работу, бот
  * в переписку больше не вмешивается, а страница пользователя подхватывает
@@ -392,7 +435,6 @@ function renderDrawer(card) {
  */
 function renderReplyBox(card) {
   const wrap = el("div", { class: "reply-box" });
-  wrap.append(el("h3", { text: "Ответить пользователю" }));
 
   if (card.out_of_scope) {
     wrap.append(el("p", {
@@ -401,13 +443,20 @@ function renderReplyBox(card) {
     }));
     return wrap;
   }
+  if (card.closed_by_user) {
+    wrap.append(el("p", {
+      class: "reply-status",
+      text: "Пользователь вышел из диалога — ответ он уже не увидит.",
+    }));
+    return wrap;
+  }
 
   const area = el("textarea", {
     rows: "3",
     maxlength: "2000",
-    placeholder: "Текст ответа. Пользователь увидит его в своём чате.",
+    placeholder: "Ответ пользователю. Ctrl+Enter — отправить.",
   });
-  const btn = el("button", { class: "btn btn--primary", text: "Отправить ответ" });
+  const btn = el("button", { class: "btn btn--primary", text: "Отправить" });
   const status = el("p", { class: "reply-status" });
   status.setAttribute("role", "status");
 
@@ -424,12 +473,13 @@ function renderReplyBox(card) {
       await apiPost(API.reply(card.ticket_id), { text });
       area.value = "";
       status.textContent = "Ответ отправлен — он уже виден пользователю.";
-      // Дописываем реплику в переписку сразу, не перерисовывая панель:
-      // так подтверждение об отправке остаётся на экране. Карточку
-      // целиком обновит автообновление через несколько секунд.
-      const log = document.querySelector("#drawer-body .dialog-log");
+      // Дописываем реплику сразу, не перерисовывая вкладку: так подтверждение
+      // об отправке остаётся на экране. Остальное обновит автообновление.
+      const log = document.getElementById("ticket-log");
       if (log) {
-        log.append(el("div", { class: "msg msg-operator", text }));
+        log.append(el("div", { class: "msg msg-operator" }, [
+          el("span", { class: "msg-text", text }),
+        ]));
         log.scrollTop = log.scrollHeight;
       }
     } catch (e) {
@@ -440,7 +490,6 @@ function renderReplyBox(card) {
     }
   }
 
-  // Ctrl+Enter — привычная для операторов отправка, не мешает переносу строк
   area.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -453,7 +502,31 @@ function renderReplyBox(card) {
   return wrap;
 }
 
-/* ---------- Кнопки боковой панели ---------- */
+/* ---------- Действия справа ---------- */
+
+document.getElementById("btn-back-to-list").addEventListener("click", () => {
+  // Выходим к списку, НЕ закрывая обращение: к нему можно вернуться
+  stopTicketRefresh();
+  switchTab("tickets");
+});
+
+document.getElementById("btn-close-ticket").addEventListener("click", async () => {
+  const id = state.activeTicketId;
+  if (!id) return;
+  const status = document.getElementById("ticket-action-status");
+  const btn = document.getElementById("btn-close-ticket");
+  btn.disabled = true;
+  status.textContent = "Закрываем…";
+  try {
+    await apiPost(API.closeByOperator(id));
+    status.textContent = "Обращение завершено.";
+    renderTicket(await apiGet(API.ticket(id)));
+    loadTickets();
+  } catch (e) {
+    btn.disabled = false;
+    status.textContent = `Не удалось завершить: ${e.message}`;
+  }
+});
 
 document.getElementById("btn-download-json").addEventListener("click", () => {
   if (!state.activeTicketId) return;
@@ -474,35 +547,33 @@ document.getElementById("toggle-share").addEventListener("change", async (e) => 
     }
   } catch {
     e.target.checked = !e.target.checked;
-    alert("Не удалось изменить доступ");
+    document.getElementById("ticket-action-status").textContent =
+      "Не удалось изменить доступ";
   }
 });
 
 document.getElementById("btn-copy-link").addEventListener("click", async () => {
+  const status = document.getElementById("ticket-action-status");
   const url = sessionStorage.getItem(`share:${state.activeTicketId}`);
-  if (!url) return alert("Сначала откройте доступ по ссылке");
+  if (!url) {
+    status.textContent = "Сначала откройте доступ по ссылке";
+    return;
+  }
   try {
     await navigator.clipboard.writeText(url);
-    alert("Ссылка скопирована");
+    status.textContent = "Ссылка скопирована";
   } catch {
     prompt("Скопируйте ссылку:", url);
   }
 });
 
-document.getElementById("drawer-close").addEventListener("click", () => {
-  const drawer = document.getElementById("drawer");
-  drawer.classList.add("hidden");
-  drawer.setAttribute("aria-hidden", "true");
-  state.activeTicketId = null;
-  document.getElementById("drawer-reply").replaceChildren();
-  stopDrawerRefresh();
-});
-
 /* ---------- Вкладка «Аналитика» ---------- */
 
 async function loadStats() {
+  const sel = document.getElementById("period-select");
+  const period = sel ? sel.value : "all";
   try {
-    renderStats(await apiGet(API.stats));
+    renderStats(await apiGet(API.stats(period)));
   } catch (e) {
     console.warn("метрики недоступны", e);
   }
@@ -533,8 +604,9 @@ function renderStats(s) {
     ]));
   }
 
-  document.getElementById("metric-rating").textContent =
-    s.avg_rating != null ? s.avg_rating.toFixed(2) : "—";
+  // Полезность: доля ответов, отмеченных 👍, в процентах
+  document.getElementById("metric-usefulness").textContent =
+    s.usefulness != null ? pct(s.usefulness) : "—";
   document.getElementById("metric-rating-count").textContent = String(s.ratings_count ?? 0);
   document.getElementById("metric-first-step").textContent =
     s.avg_time_to_first_step_ms != null
@@ -623,6 +695,32 @@ document.getElementById("kb-btn").addEventListener("click", searchKB);
 document.getElementById("kb-search").addEventListener("keydown", (e) => {
   if (e.key === "Enter") searchKB();
 });
+
+// Период на вкладке «Аналитика»
+document.getElementById("period-select").addEventListener("change", loadStats);
+
+/* Форма добавления карточки живёт в модальном окне: вкладка «База знаний»
+   раньше открывалась сразу большой формой, за которой не было видно
+   ни поиска, ни списка пробелов. */
+const kbModal = document.getElementById("kb-modal");
+
+function openKbModal() {
+  kbModal.hidden = false;
+  document.getElementById("kb-title").focus();
+}
+
+function closeKbModal() {
+  kbModal.hidden = true;
+}
+
+document.getElementById("kb-open-form").addEventListener("click", openKbModal);
+kbModal.querySelectorAll("[data-close-modal]").forEach((n) => {
+  n.addEventListener("click", closeKbModal);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !kbModal.hidden) closeKbModal();
+});
+window.closeKbModal = closeKbModal;
 
 const csvBtn = document.getElementById("btn-export-csv");
 if (csvBtn) csvBtn.addEventListener("click", () => { window.location.href = API.exportCsv; });
@@ -759,6 +857,8 @@ window.searchKB = searchKB;
 
       loadGaps();
       searchKB();
+      // Окно закрываем не сразу: пусть оператор увидит подтверждение
+      setTimeout(() => { if (window.closeKbModal) window.closeKbModal(); }, 1600);
     } catch {
       showError("Не удалось связаться с сервером. Проверьте соединение и повторите.");
     } finally {

@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from core.auth import require_operator
 from db import repo
+from db.models import iso_utc
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["export"])
 public_router = APIRouter(tags=["public"])
 
 CSV_COLUMNS = [
-    "ticket_id", "created_at", "state", "category", "article_id", "confidence",
+    "ticket_id", "public_no", "created_at", "state", "category", "article_id", "confidence",
     "problem_summary", "resolved_by_bot", "needs_specialist", "assist_used",
     "out_of_scope", "user_actions_count", "rating",
 ]
@@ -41,7 +42,7 @@ def export_csv() -> StreamingResponse:
         writer.writerow(CSV_COLUMNS)
         for t in repo.list_tickets(db, limit=10000):
             writer.writerow([
-                t.id, t.created_at.isoformat(), t.state, t.category or "",
+                t.id, t.public_no or "", iso_utc(t.created_at), t.state, t.category or "",
                 t.article_id or "", round(t.confidence, 2), t.problem_summary,
                 int(t.resolved_by_bot), int(t.needs_specialist), int(t.assist_used),
                 int(bool(t.out_of_scope)),
@@ -61,7 +62,8 @@ def export_csv() -> StreamingResponse:
 def _card_dict(db, t) -> dict:
     return {
         "ticket_id": t.id,
-        "created_at": t.created_at.isoformat(),
+        "public_no": t.public_no,
+        "created_at": iso_utc(t.created_at),
         "category": t.category,
         "article_id": t.article_id,
         "confidence": round(t.confidence, 2),
@@ -140,7 +142,7 @@ def public_view(share_token: str) -> HTMLResponse:
         )
         html = f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Обращение {esc(t.id)}</title>
+<title>Обращение №{esc(t.public_no or t.id)}</title>
 <link rel="stylesheet" href="/static/style.css">
 <style>
  .wrap{{max-width:44rem;margin:0 auto;padding:2rem 1.25rem}}
@@ -152,7 +154,7 @@ def public_view(share_token: str) -> HTMLResponse:
  dt{{font-size:.75rem;text-transform:uppercase;color:var(--text-muted);font-weight:700}}
  dd{{margin:0 0 .75rem}}
 </style></head><body><div class="wrap">
-<div class="box"><h1 style="margin:0 0 1rem;font-size:1.25rem">Обращение {esc(t.id)}</h1>
+<div class="box"><h1 style="margin:0 0 1rem;font-size:1.25rem">Обращение №{esc(t.public_no or t.id)}</h1>
 <dl><dt>Категория</dt><dd>{esc(t.category or "—")}</dd>
 <dt>Проблема</dt><dd>{esc(t.problem_summary or "—")}</dd>
 <dt>Результат</dt><dd>{esc(t.resolution or "в работе")}</dd>

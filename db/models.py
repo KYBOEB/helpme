@@ -11,6 +11,21 @@ def utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+def iso_utc(value: dt.datetime | None) -> str:
+    """Время в ISO с явной пометкой UTC.
+
+    В базе оно лежит без часового пояса, и `isoformat()` отдавал строку вида
+    `2026-09-11T01:57:00`. Браузер читает такую строку как ЛОКАЛЬНОЕ время —
+    отсюда расхождение ровно на часовой пояс (в Томске это семь часов).
+    С пометкой `+00:00` браузер сам переводит время в пояс пользователя.
+    """
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt.timezone.utc)
+    return value.isoformat()
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -48,6 +63,14 @@ class Ticket(Base):
     # сколько раз подряд пришло нецелевое сообщение: первое — предупреждение,
     # второе — закрытие. Один промах пользователя не должен стоить ему обращения.
     offtopic_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Короткий номер для человека. Внутренний id (t_c18c55b3b7bd) пользователю
+    # показывать нельзя: он длинный, его невозможно продиктовать по телефону,
+    # и он же служит частью адресации обращения.
+    public_no: Mapped[int | None] = mapped_column(Integer, default=None)
+    # пользователь сам вышел из диалога, обращение закрыто без специалиста
+    closed_by_user: Mapped[bool] = mapped_column(Boolean, default=False)
+    # пользователя уже попросили описать проблему в ответ на просьбу о специалисте
+    specialist_asked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="ticket",
                                                      cascade="all, delete-orphan")

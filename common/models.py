@@ -108,6 +108,9 @@ class Reply(BaseModel):
 
 class TicketCard(BaseModel):
     ticket_id: str
+    # Короткий номер для пользователя: «Обращение №1042».
+    # Внутренний ticket_id в интерфейсе не показывается.
+    public_no: int = 0
     category: str
     problem_summary: str
     slots: dict[str, str] = Field(default_factory=dict)

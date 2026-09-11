@@ -201,6 +201,121 @@ check("выгрузка CSV содержит колонку out_of_scope", "out_
       csv_text.splitlines()[0][:120] if csv_text else "пусто")
 
 
+# -------------------------------------------------- 6. время с часовым поясом
+
+d = chat("не подключается VPN").json()
+tid6, tok6 = d["ticket_id"], d["token"]
+brief = client.get(f"/api/tickets/{tid6}").json()
+check("время отдаётся с пометкой часового пояса",
+      brief["created_at"].endswith("+00:00"), brief["created_at"])
+check("у обращения есть короткий номер",
+      isinstance(brief["public_no"], int) and brief["public_no"] > 1000,
+      str(brief.get("public_no")))
+check("короткий номер виден пользователю в карточке",
+      d.get("ticket_card") is None or d["ticket_card"].get("public_no", 0) > 0,
+      "нет номера в карточке")
+
+
+# ------------------------------------------- 7. пользователь вышел из диалога
+
+r = client.post(f"/api/tickets/{tid6}/close", json={"token": tok6})
+check("пользователь может закрыть обращение", r.status_code == 200, str(r.status_code))
+brief = client.get(f"/api/tickets/{tid6}").json()
+check("закрытое пользователем обращение не активно",
+      brief["state"] == "RESOLVED" and brief["closed_by_user"] is True, str(brief)[:150])
+check("закрытое пользователем не ждёт специалиста",
+      brief["needs_specialist"] is False, str(brief["needs_specialist"]))
+r = client.post(f"/api/tickets/{tid6}/close", json={"token": "s_чужой"})
+check("чужим токеном обращение не закрыть", r.status_code == 404, str(r.status_code))
+
+
+# ---------------------------------------------------------- 8. оценка 1 и 0
+
+d = chat("не подключается VPN").json()
+tid8, tok8 = d["ticket_id"], d["token"]
+r = client.post(f"/api/tickets/{tid8}/rate", json={"rating": 1, "token": tok8})
+check("оценка «помогло» принимается", r.status_code == 200, str(r.status_code))
+r = client.post(f"/api/tickets/{tid8}/rate", json={"rating": 5, "token": tok8})
+check("старая пятибалльная оценка отклоняется", r.status_code == 422, str(r.status_code))
+r = client.post(f"/api/tickets/{tid8}/rate", json={"rating": True, "token": tok8})
+check("булево значение вместо оценки отклоняется", r.status_code == 422, str(r.status_code))
+s = client.get("/api/stats").json()
+check("полезность считается долей от 0 до 1",
+      s["usefulness"] is None or 0.0 <= s["usefulness"] <= 1.0, str(s.get("usefulness")))
+
+
+# ------------------------------------- 9. каскад: специалист после провала
+
+_route_plan.append(RouteResult(category="рабочее место", article_id=None,
+                               confidence=0.9, problem_summary="странная проблема"))
+d = chat("монитор издаёт странный запах жжёного пластика").json()
+tid9, tok9 = d["ticket_id"], d["token"]
+check("общая рекомендация выдаёт шаги", d["reply"]["type"] == "steps", str(d["reply"])[:150])
+check("в общей рекомендации нет кнопки «Позвать специалиста»",
+      not d["reply"].get("quick_replies"), str(d["reply"].get("quick_replies")))
+check("текст не дублирует сообщение о передаче специалисту",
+      d["reply"]["text"].count("специалист") <= 1, d["reply"]["text"][:160])
+brief = client.get(f"/api/tickets/{tid9}").json()
+check("общая рекомендация НЕ ставит обращение в очередь",
+      brief["needs_specialist"] is False, str(brief["needs_specialist"]))
+d2 = chat("не помогло", ticket_id=tid9, token=tok9).json()
+check("после провала рекомендаций зовём специалиста",
+      d2["state"] == "ESCALATED", str(d2["state"]))
+check("в сообщении об эскалации нет внутреннего номера",
+      "t_" not in d2["reply"]["text"], d2["reply"]["text"][:160])
+
+
+# ------------------------ 10. просьба о специалисте без описания проблемы
+
+d = chat("вызови специалиста, я ниче не понимаю").json()
+tid10, tok10 = d["ticket_id"], d["token"]
+check("на просьбу о специалисте просим описать проблему",
+      d["reply"]["type"] == "question" and d["state"] != "ESCALATED", str(d)[:200])
+check("общие шаги при этом не выдаются", not d["reply"].get("steps"), str(d["reply"])[:150])
+check("предложена кнопка позвать специалиста всё равно",
+      any("специалист" in q.lower() for q in d["reply"]["quick_replies"]),
+      str(d["reply"]["quick_replies"]))
+d2 = chat(quick_reply=d["reply"]["quick_replies"][0],
+          ticket_id=tid10, token=tok10).json()
+check("по кнопке обращение уходит специалисту",
+      d2["state"] == "ESCALATED", str(d2["state"]))
+
+# описание проблемы вместе с просьбой обрабатывается как обычно
+d = chat("не работает VPN, позовите специалиста").json()
+check("описанная проблема не принимается за пустую просьбу",
+      d["reply"]["type"] in ("steps", "question", "choice") and bool(d["category"]),
+      str(d)[:200])
+
+
+# ------------------------------------------- 11. завершение обращения оператором
+
+d = chat("не подключается VPN").json()
+tid11, tok11 = d["ticket_id"], d["token"]
+client.post(f"/api/tickets/{tid11}/reply", json={"text": "Подключаюсь к заявке."})
+r = client.post(f"/api/tickets/{tid11}/resolve")
+check("специалист может завершить обращение",
+      r.status_code == 200 and r.json()["state"] == "RESOLVED", str(r.json()))
+upd = client.post("/api/chat/updates",
+                  json={"ticket_id": tid11, "token": tok11, "after": 0}).json()
+check("пользователь видит, что обращение закрыто",
+      upd["state"] == "RESOLVED", str(upd["state"]))
+r = client.post("/api/tickets/t_nosuch/resolve")
+check("завершение несуществующего обращения даёт 404", r.status_code == 404,
+      str(r.status_code))
+
+
+# ------------------------------------------------ 12. период в метриках
+
+for period in ("day", "week", "month", "all"):
+    s = client.get(f"/api/stats?period={period}").json()
+    check(f"метрики за период «{period}» считаются",
+          s["period"] == period and isinstance(s["total"], int), str(s)[:120])
+s_day = client.get("/api/stats?period=day").json()
+s_all = client.get("/api/stats?period=all").json()
+check("за сутки обращений не больше, чем за всё время",
+      s_day["total"] <= s_all["total"], f'{s_day["total"]} > {s_all["total"]}')
+
+
 print()
 if FAILED:
     print(f"ПРОВАЛЕНО {len(FAILED)}: " + "; ".join(FAILED))

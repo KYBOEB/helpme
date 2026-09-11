@@ -4,10 +4,11 @@ from __future__ import annotations
 import json
 import os
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from db.models import Base, Event, Idempotency, Message, SlotValue, Ticket
+from db.models import (Base, Event, Idempotency, Message, SlotValue, Ticket,
+                       iso_utc)
 
 DB_PATH = os.getenv("DB_PATH", "data/helpme.db")
 os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
@@ -25,6 +26,9 @@ _NEW_COLUMNS = {
         "share_token": "VARCHAR(64)",
         "out_of_scope": "BOOLEAN DEFAULT 0",
         "offtopic_count": "INTEGER DEFAULT 0",
+        "public_no": "INTEGER",
+        "closed_by_user": "BOOLEAN DEFAULT 0",
+        "specialist_asked": "BOOLEAN DEFAULT 0",
     },
 }
 
@@ -72,7 +76,15 @@ def history(db: Session, ticket_id: str, limit: int = 10) -> list[dict]:
     stmt = (select(Message).where(Message.ticket_id == ticket_id)
             .order_by(Message.created_at.desc()).limit(limit))
     rows = list(db.scalars(stmt))[::-1]
-    return [{"role": m.role, "content": m.content} for m in rows]
+    return [{"id": m.id, "role": m.role, "content": m.content,
+             "created_at": iso_utc(m.created_at)} for m in rows]
+
+
+def next_public_no(db: Session) -> int:
+    """Следующий короткий номер обращения. Начинаем с 1001, чтобы номер
+    сразу выглядел как настоящий, а не как «обращение №1» на демонстрации."""
+    current = db.scalar(select(func.max(Ticket.public_no)))
+    return max(int(current or 0), 1000) + 1
 
 
 def messages_after(db: Session, ticket_id: str, after_id: int,
@@ -90,7 +102,7 @@ def messages_after(db: Session, ticket_id: str, after_id: int,
             .order_by(Message.id.asc())
             .limit(max(1, min(limit, 200))))
     return [{"id": m.id, "role": m.role, "content": m.content,
-             "created_at": m.created_at.isoformat()} for m in db.scalars(stmt)]
+             "created_at": iso_utc(m.created_at)} for m in db.scalars(stmt)]
 
 
 def last_message_id(db: Session, ticket_id: str) -> int:

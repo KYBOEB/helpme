@@ -28,7 +28,7 @@ const QR = {
 
 // Сообщение, когда шаги из базы знаний не помогли и дальше отвечает ИИ (source: "general")
 const AI_HANDOFF_TEXT = "Рекомендации из базы знаний не помогли. Сейчас вам ответит ИИ-ассистент, ожидайте.";
-const GENERAL_BADGE_TEXT = "Общая рекомендация, решения нет в базе знаний";
+const GENERAL_BADGE_TEXT = "Совет ИИ-ассистента";
 
 // Человеческие тексты ошибок вместо «Error 429»
 const ERROR_TEXT = {
@@ -119,6 +119,10 @@ function init() {
 
   document.getElementById("resume-continue").addEventListener("click", resumeTicket);
   document.getElementById("resume-new").addEventListener("click", () => {
+    // Отказались продолжать — старое обращение закрываем, чтобы оно
+    // не висело в панели оператора как активное
+    const saved = loadSaved();
+    if (saved) closeTicket(saved.ticketId, saved.token);
     clearSaved();
     hideResume();
   });
@@ -463,8 +467,11 @@ function renderCard(data) {
 
   const resultEl = el("p", null, `Результат: ${resultText(data, outcome)}`);
   const draft = el("div", "card-draft");
+  // Показываем короткий номер, а не внутренний идентификатор t_c18c55b3b7bd:
+  // такой номер человек может продиктовать по телефону.
+  const number = card.public_no ? `№${card.public_no}` : "";
   draft.append(
-    el("p", null, `Обращение №${ticketId || "—"}, ${card.category || data.category || "без категории"}`),
+    el("p", null, `Обращение ${number}, ${card.category || data.category || "без категории"}`.replace(" ,", "")),
     el("p", null, `Проблема: ${card.problem_summary || "—"}`),
     resultEl
   );
@@ -527,9 +534,12 @@ function renderRating(ticketId) {
   const status = el("p", "rating-status");
   status.setAttribute("role", "status");
 
+  // Оценка бинарная: 1 — помогло, 0 — нет. Из неё считается доля полезных
+  // ответов в процентах; средний балл по пятибалльной шкале на таком
+  // количестве оценок не значил бы ничего.
   const options = [
-    { text: "👍 Помогло", rating: 5 },
-    { text: "👎 Не помогло", rating: 1 },
+    { text: "👍 Помогло", rating: 1 },
+    { text: "👎 Не помогло", rating: 0 },
   ];
   const btns = options.map(({ text, rating }) => {
     const btn = el("button", "btn btn--ghost", text);
@@ -561,6 +571,15 @@ function renderRating(ticketId) {
 // POST /api/tickets/{id}/escalate — передать специалисту, тоже с token
 function escalateTicket(ticketId) {
   return apiPost(`/api/tickets/${encodeURIComponent(ticketId)}/escalate`, { token: state.token });
+}
+
+// POST /api/tickets/{id}/close — пользователь ушёл из диалога.
+// Без этого брошенное обращение продолжало висеть в панели как активное.
+// Ошибку глушим: уход пользователя не должен упираться в сеть.
+function closeTicket(ticketId, token) {
+  if (!ticketId || !token || MOCK) return;
+  apiPost(`/api/tickets/${encodeURIComponent(ticketId)}/close`, { token })
+    .catch(() => {});
 }
 
 // POST /api/tickets/{id}/rate — теперь обязательно с token из ответа /api/chat
@@ -717,7 +736,17 @@ async function pollOperator() {
     addOperatorMessage(m.text);
     if (typeof m.id === "number" && m.id > state.lastMsgId) state.lastMsgId = m.id;
   }
-  if (data.state === "RESOLVED") stopPolling();
+  if (data.state === "RESOLVED") {
+    stopPolling();
+    clearSaved();
+    // Специалист закрыл обращение — молча обрывать диалог нельзя
+    const msg = addBotMessage("Специалист завершил обращение. "
+      + "Если проблема вернётся — начните новое, я помогу.");
+    const actions = el("div", "msg-actions");
+    actions.append(button("btn btn--ghost", "Новое обращение", resetConversation));
+    msg.body.append(actions);
+    scrollToMessage(msg.row);
+  }
 }
 
 function addOperatorMessage(text) {
@@ -863,6 +892,9 @@ function retireActiveControls() {
 // «На главную», «Завершить обращение», «Новое обращение».
 // Можно нажать и во время запроса: ответ старого диалога просто отбросится.
 function resetConversation() {
+  // Уходим из диалога — закрываем обращение на сервере. Продолжить его
+  // уже нельзя: локальные номер и токен сейчас будут стёрты.
+  closeTicket(state.ticketId, state.token);
   state.conv++;
   stopPolling();
   if (state.busy) {
