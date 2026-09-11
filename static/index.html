@@ -5,15 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Помоги мне — техподдержка</title>
   <!-- Никаких CDN: только локальные файлы -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/static/style.css?v=10">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="app.js" defer></script>
+  <script src="/static/app.js?v=10" defer></script>
 </head>
 <body>
   <div class="app">
 
-    <!-- Шапка: название; слева в диалоге/истории появляется кнопка «назад»,
-         справа — «Специалист» (F4) и «Мои обращения» (F5). -->
+    <!-- Шапка: название; слева в диалоге появляется кнопка «на главную»,
+         справа — «Специалист» (F4). «История обращений» и «Поиск по базе
+         знаний» — теперь отдельные краевые вкладки внизу файла, не в шапке. -->
     <header class="header">
       <div class="header-inner">
         <button id="back-btn" class="back-btn" type="button" hidden>
@@ -32,11 +33,6 @@
             <span aria-hidden="true">🧑‍💼</span>
             <span class="header-btn-label">Специалист</span>
           </button>
-          <!-- F5: видна, если в браузере уже есть client_id -->
-          <button id="history-btn" class="header-btn" type="button" hidden>
-            <span aria-hidden="true">🕘</span>
-            <span class="header-btn-label">Мои обращения</span>
-          </button>
         </div>
       </div>
     </header>
@@ -51,12 +47,11 @@
       </div>
     </div>
 
-    <!-- Прокручиваемая область: главный экран, лента диалога, «Мои обращения» —
-         показывается только один из этих экранов за раз, переключает app.js. -->
+    <!-- Прокручиваемая область: главный экран или лента диалога — один
+         из двух за раз, переключает app.js. -->
     <main id="chat" class="chat">
 
-      <!-- Главный экран: логотип, приветствие, поле ввода, каталог категорий,
-           поиск по базе знаний -->
+      <!-- Главный экран: логотип, приветствие, поле ввода, каталог категорий -->
       <section id="empty" class="empty">
         <div class="empty-inner">
           <!-- Плашка с логотипом компании — собрана из трёх файлов
@@ -66,9 +61,9 @@
                отдельно от текста, не накладывая поверх лишних символов.
                В покое все три стоят вплотную и выглядят одним логотипом. -->
           <div class="hero-logo" role="img" aria-label="Актион">
-            <img class="logo-piece logo-piece--left" src="img/logo-left.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--mid" src="img/logo-mid.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--right" src="img/logo-right.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--left" src="/static/img/logo-left.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--mid" src="/static/img/logo-mid.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--right" src="/static/img/logo-right.png" alt="" aria-hidden="true">
           </div>
           <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
           <p class="empty-text">ИТ-поддержка ТПУ — опишите проблему, найдём решение.</p>
@@ -123,43 +118,45 @@
               </span>
             </button>
           </div>
-
-          <!-- F1: поиск по базе знаний, GET /api/kb/search. Компактная строка —
-               счётчик инструкций встроен прямо в placeholder (app.js), отдельной
-               строки под ней больше нет, чтобы не растягивать экран по высоте. -->
-          <div class="kb-search">
-            <label for="kb-search-input" class="visually-hidden">Поиск по базе знаний</label>
-            <div class="kb-search-box">
-              <span class="kb-search-icon" aria-hidden="true">🔎</span>
-              <input id="kb-search-input" type="text" placeholder="Поиск по базе знаний…" autocomplete="off">
-            </div>
-            <ul id="kb-search-results" class="kb-search-results" hidden></ul>
-          </div>
         </div>
       </section>
 
       <!-- Лента сообщений -->
       <div id="feed" class="feed" role="log" aria-live="polite" aria-label="Диалог с помощником" hidden></div>
-
-      <!-- F5: список «Мои обращения» -->
-      <section id="history" class="history" hidden>
-        <div class="history-inner">
-          <h2 class="history-title">Мои обращения</h2>
-          <div id="history-list" class="history-list"></div>
-        </div>
-      </section>
-
-      <!-- F5: переписка одного обращения из истории (только чтение) -->
-      <section id="history-detail" class="history-detail" hidden>
-        <div class="history-detail-inner">
-          <div id="history-detail-feed" class="history-detail-feed"></div>
-          <div id="history-detail-actions" class="history-detail-actions"></div>
-        </div>
-      </section>
     </main>
 
     <!-- Нижняя панель: сюда переезжает поле ввода, когда начался диалог -->
     <footer id="dock" class="dock" hidden></footer>
+
+    <!-- Краевые вкладки: «История обращений» слева, «Поиск по базе знаний»
+         справа. Видны всегда (и на главной, и в диалоге). Клик выдвигает
+         панель с той же стороны и прячет обе вкладки; вернуться к работе
+         с остальным сайтом можно только закрыв панель крестиком сбоку. -->
+    <button class="edge-tab edge-tab--left" id="edge-tab-history" type="button">
+      <span class="edge-tab-label">История обращений</span>
+    </button>
+    <button class="edge-tab edge-tab--right" id="edge-tab-search" type="button">
+      <span class="edge-tab-label">Поиск по базе знаний</span>
+    </button>
+
+    <div class="edge-backdrop" id="edge-backdrop"></div>
+
+    <aside class="edge-panel edge-panel--left" id="panel-history" aria-label="История обращений">
+      <button class="edge-panel-close" id="panel-history-close" type="button" aria-label="Закрыть">×</button>
+      <h3 class="edge-panel-title">История обращений</h3>
+      <div id="panel-history-body"></div>
+    </aside>
+
+    <aside class="edge-panel edge-panel--right" id="panel-search" aria-label="Поиск по базе знаний">
+      <button class="edge-panel-close" id="panel-search-close" type="button" aria-label="Закрыть">×</button>
+      <h3 class="edge-panel-title">Поиск по базе знаний</h3>
+      <label for="kb-search-input" class="visually-hidden">Поиск по базе знаний</label>
+      <div class="kb-search-box">
+        <span class="kb-search-icon" aria-hidden="true">🔎</span>
+        <input id="kb-search-input" type="text" placeholder="Поиск по базе знаний…" autocomplete="off">
+      </div>
+      <ul id="kb-search-results" class="kb-search-results" hidden></ul>
+    </aside>
 
   </div>
 </body>

@@ -93,23 +93,21 @@ const state = {
   lastMsgId: 0,     // последнее показанное сообщение переписки
   lastPublicNo: null, // короткий номер текущего обращения, если уже известен
 
-  screen: "home",   // "home" | "chat" | "history" | "history-detail"
-  returnScreen: null, // куда вернуться из «Мои обращения»
-  done: false,        // обращение завершено — прячем кнопку «Специалист»
+  screen: "home",   // "home" | "chat"
+  done: false,      // обращение завершено — прячем кнопку «Специалист»
 
   lastClassifyKey: null, // чтобы не повторять строку категории на каждом сообщении
   pendingParent: null,   // {ticketId, token} — «Проблема вернулась», привязать следующее сообщение
-
-  historyTickets: null,  // кэш списка «Мои обращения» на время сессии
-  historyTicket: null,   // какое обращение открыто в history-detail
 };
 
 // ---------- DOM ----------
 
 let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl;
-let composerEl, heroSlotEl, dockEl, backBtn, backBtnLabel, resumeEl;
-let specialistBtn, historyBtn;
-let historyEl, historyListEl, historyDetailEl, historyDetailFeedEl, historyDetailActionsEl;
+let composerEl, heroSlotEl, dockEl, backBtn, resumeEl;
+let specialistBtn;
+let edgeTabHistory, edgeTabSearch, edgeBackdrop;
+let panelHistory, panelHistoryBody, panelHistoryClose;
+let panelSearch, panelSearchClose;
 let kbSearchInput, kbResultsEl;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -126,16 +124,18 @@ function init() {
   heroSlotEl = document.getElementById("hero-slot");
   dockEl = document.getElementById("dock");
   backBtn = document.getElementById("back-btn");
-  backBtnLabel = backBtn.querySelector("span");
   resumeEl = document.getElementById("resume");
 
   specialistBtn = document.getElementById("specialist-btn");
-  historyBtn = document.getElementById("history-btn");
-  historyEl = document.getElementById("history");
-  historyListEl = document.getElementById("history-list");
-  historyDetailEl = document.getElementById("history-detail");
-  historyDetailFeedEl = document.getElementById("history-detail-feed");
-  historyDetailActionsEl = document.getElementById("history-detail-actions");
+
+  edgeTabHistory = document.getElementById("edge-tab-history");
+  edgeTabSearch = document.getElementById("edge-tab-search");
+  edgeBackdrop = document.getElementById("edge-backdrop");
+  panelHistory = document.getElementById("panel-history");
+  panelHistoryBody = document.getElementById("panel-history-body");
+  panelHistoryClose = document.getElementById("panel-history-close");
+  panelSearch = document.getElementById("panel-search");
+  panelSearchClose = document.getElementById("panel-search-close");
 
   kbSearchInput = document.getElementById("kb-search-input");
   kbResultsEl = document.getElementById("kb-search-results");
@@ -152,9 +152,13 @@ function init() {
   initKbSearch();
   loadKbCount();
 
-  backBtn.addEventListener("click", handleBack);
+  backBtn.addEventListener("click", resetConversation);
   specialistBtn.addEventListener("click", callSpecialist);
-  historyBtn.addEventListener("click", openHistory);
+
+  edgeTabHistory.addEventListener("click", () => openEdgePanel("history"));
+  edgeTabSearch.addEventListener("click", () => openEdgePanel("search"));
+  panelHistoryClose.addEventListener("click", closeEdgePanel);
+  panelSearchClose.addEventListener("click", closeEdgePanel);
 
   document.getElementById("resume-continue").addEventListener("click", () => resumeTicket());
   document.getElementById("resume-new").addEventListener("click", () => {
@@ -166,8 +170,6 @@ function init() {
     hideResume();
   });
   offerResume();
-
-  if (loadClientId()) historyBtn.hidden = false;
 
   window.addEventListener("popstate", onPopState);
   try { history.replaceState({ screen: "home" }, "", location.pathname + location.search); } catch { /* file:// иногда против */ }
@@ -839,7 +841,6 @@ function clearSaved() {
 function saveClientId(id) {
   if (!id) return;
   try { localStorage.setItem(CLIENT_STORE_KEY, id); } catch { /* приватное окно */ }
-  if (historyBtn) historyBtn.hidden = false;
 }
 
 function loadClientId() {
@@ -1185,10 +1186,9 @@ function resetConversation() {
   if (window.matchMedia("(hover: hover)").matches) inputEl.focus();
 }
 
-// Экран: «home» (главная), «chat» (диалог), «history» (Мои обращения),
-// «history-detail» (переписка одного обращения из истории, только чтение).
-// Переход между ними — отдельная запись в истории браузера (F6): кнопка
-// «назад» в браузере работает так же, как и наша собственная кнопка «назад».
+// Экран: «home» (главная) или «chat» (диалог). Переход между ними —
+// отдельная запись в истории браузера (F6): кнопка «назад» в браузере
+// работает так же, как и наша собственная кнопка «на главную».
 function setMode(mode, { push = true } = {}) {
   if (state.screen === mode) return; // уже в нужном режиме
   const hadFocus = composerEl.contains(document.activeElement);
@@ -1199,11 +1199,8 @@ function setMode(mode, { push = true } = {}) {
 
   emptyEl.hidden = !home;
   feedEl.hidden = !chatMode;
-  historyEl.hidden = mode !== "history";
-  historyDetailEl.hidden = mode !== "history-detail";
   dockEl.hidden = !chatMode;
   backBtn.hidden = home;
-  backBtnLabel.textContent = chatMode ? "На главную" : "Назад";
 
   if (home) heroSlotEl.append(composerEl);
   else if (chatMode) dockEl.append(composerEl);
@@ -1214,10 +1211,7 @@ function setMode(mode, { push = true } = {}) {
   if (hadFocus && chatMode) inputEl.focus({ preventScroll: true }); // перенос в DOM сбрасывает фокус
 
   if (push) {
-    const url = chatMode ? "#/chat"
-      : mode === "history" ? "#/history"
-      : mode === "history-detail" ? "#/history/detail"
-      : "#/";
+    const url = chatMode ? "#/chat" : "#/";
     try { history.pushState({ screen: mode }, "", url); } catch { /* file:// иногда против */ }
   }
 }
@@ -1225,7 +1219,6 @@ function setMode(mode, { push = true } = {}) {
 function onPopState(event) {
   const target = event.state?.screen || "home";
   if (target === "chat" && !state.ticketId) return setMode("home", { push: false });
-  if (target === "history-detail" && !state.historyTicket) return setMode("history", { push: false });
   setMode(target, { push: false });
 }
 
@@ -1285,6 +1278,7 @@ function renderKbResults(items) {
       const text = item.title || item.id;
       kbSearchInput.value = "";
       renderKbResults([]);
+      closeEdgePanel(); // выбрали статью — возвращаемся к диалогу, куда уйдёт сообщение
       send({ message: text }, { echo: text });
     });
     li.append(btn);
@@ -1315,33 +1309,50 @@ function pluralInstructions(n) {
 }
 
 /* ==========================================================================
-   F5: «МОИ ОБРАЩЕНИЯ»
-   Список приходит с /api/my/tickets по client_id (см. MOCK выше, пока
-   бэкенд не выкатили). Переписка отдельного обращения — уже существующий
+   КРАЕВЫЕ ВКЛАДКИ: «История обращений» и «Поиск по базе знаний»
+   Две вкладки-скобки по краям экрана, видны всегда — и на главной, и в
+   диалоге. Клик выдвигает панель с той же стороны и прячет обе вкладки;
+   пока панель открыта, фон затемнён и перехватывает клики — продолжить
+   работу с остальным сайтом можно только закрыв её крестиком.
+   Список обращений приходит с /api/my/tickets по client_id (см. MOCK выше,
+   пока бэкенд не выкатили). Переписка одного обращения — уже существующий
    POST /api/chat/updates с full: true, он работает и для закрытых обращений.
    ========================================================================== */
 
-function handleBack() {
-  if (state.screen === "history-detail") return setMode("history");
-  if (state.screen === "history") return setMode(state.returnScreen || "home");
-  return resetConversation(); // state.screen === "chat"
+function openEdgePanel(which) {
+  const isHistory = which === "history";
+  const tab = isHistory ? edgeTabHistory : edgeTabSearch;
+  const otherTab = isHistory ? edgeTabSearch : edgeTabHistory;
+  const panel = isHistory ? panelHistory : panelSearch;
+
+  tab.classList.add("is-hidden");
+  otherTab.classList.add("is-hidden");
+  tab.tabIndex = otherTab.tabIndex = -1;
+  panel.classList.add("is-open");
+  panel.inert = false;
+  edgeBackdrop.classList.add("is-visible");
+
+  if (isHistory) loadHistoryPanel();
+  panel.querySelector(".edge-panel-close")?.focus({ preventScroll: true });
 }
 
-function openHistory() {
-  if (state.screen !== "history" && state.screen !== "history-detail") {
-    state.returnScreen = state.screen;
-  }
-  setMode("history");
-  loadHistoryList();
+function closeEdgePanel() {
+  panelHistory.classList.remove("is-open");
+  panelSearch.classList.remove("is-open");
+  panelHistory.inert = true;
+  panelSearch.inert = true;
+  edgeBackdrop.classList.remove("is-visible");
+  edgeTabHistory.classList.remove("is-hidden");
+  edgeTabSearch.classList.remove("is-hidden");
+  edgeTabHistory.tabIndex = edgeTabSearch.tabIndex = 0;
 }
 
-async function loadHistoryList() {
-  historyListEl.replaceChildren();
-  historyListEl.append(el("p", "history-status", "Загрузка…"));
+async function loadHistoryPanel() {
+  panelHistoryBody.replaceChildren(el("p", "history-status", "Загрузка…"));
 
   const clientId = loadClientId();
   if (!clientId) {
-    historyListEl.replaceChildren(el("p", "history-status", "Обращений пока нет."));
+    panelHistoryBody.replaceChildren(el("p", "history-status", "Пока вы не отправили ни одного обращения."));
     return;
   }
 
@@ -1349,24 +1360,26 @@ async function loadHistoryList() {
   try {
     data = await myTickets(clientId);
   } catch {
-    historyListEl.replaceChildren();
-    historyListEl.append(el("p", "history-status", "Не удалось загрузить обращения."));
-    historyListEl.append(button("btn btn--ghost", "Повторить", loadHistoryList));
+    panelHistoryBody.replaceChildren();
+    panelHistoryBody.append(el("p", "history-status", "Не удалось загрузить обращения."));
+    panelHistoryBody.append(button("btn btn--ghost", "Повторить", loadHistoryPanel));
     return;
   }
 
-  state.historyTickets = Array.isArray(data.tickets) ? data.tickets : [];
-  renderHistoryList(state.historyTickets);
+  const tickets = Array.isArray(data.tickets) ? data.tickets : [];
+  renderHistoryPanelList(tickets);
 }
 
-function renderHistoryList(tickets) {
-  historyListEl.replaceChildren();
+function renderHistoryPanelList(tickets) {
+  panelHistoryBody.replaceChildren();
   if (!tickets.length) {
-    historyListEl.append(el("p", "history-status", "Обращений пока нет."));
+    panelHistoryBody.append(el("p", "history-status", "Пока вы не отправили ни одного обращения."));
     return;
   }
+  const list = el("div", "history-list");
   const sorted = [...tickets].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  sorted.forEach((ticket) => historyListEl.append(renderHistoryRow(ticket)));
+  sorted.forEach((ticket) => list.append(renderHistoryRow(ticket)));
+  panelHistoryBody.append(list);
 }
 
 function renderHistoryRow(ticket) {
@@ -1389,7 +1402,7 @@ function renderHistoryRow(ticket) {
   }
   row.append(meta);
 
-  row.addEventListener("click", () => openHistoryDetail(ticket));
+  row.addEventListener("click", () => renderHistoryPanelDetail(ticket));
   return row;
 }
 
@@ -1412,12 +1425,19 @@ function historyActionKind(ticket) {
   return "closed"; // RESOLVED и всё, что не попало в первые два случая
 }
 
-async function openHistoryDetail(ticket) {
-  state.historyTicket = ticket;
-  setMode("history-detail");
-  historyDetailFeedEl.replaceChildren();
-  historyDetailActionsEl.replaceChildren();
-  historyDetailFeedEl.append(el("p", "history-status", "Загрузка переписки…"));
+// Переписка одного обращения — рисуется внутри той же левой панели,
+// поверх списка; «‹ К списку обращений» возвращает без закрытия панели.
+async function renderHistoryPanelDetail(ticket) {
+  panelHistoryBody.replaceChildren();
+
+  const back = el("button", "edge-panel-back", "‹ К списку обращений");
+  back.type = "button";
+  back.addEventListener("click", loadHistoryPanel);
+  panelHistoryBody.append(back);
+
+  const feedWrap = el("div", "history-detail-feed");
+  feedWrap.append(el("p", "history-status", "Загрузка переписки…"));
+  panelHistoryBody.append(feedWrap);
 
   let data;
   try {
@@ -1425,41 +1445,48 @@ async function openHistoryDetail(ticket) {
       ticket_id: ticket.ticket_id, token: ticket.token, after: 0, full: true,
     });
   } catch {
-    historyDetailFeedEl.replaceChildren();
-    historyDetailFeedEl.append(el("p", "history-status", "Не удалось загрузить переписку."));
-    historyDetailFeedEl.append(button("btn btn--ghost", "Повторить", () => openHistoryDetail(ticket)));
+    feedWrap.replaceChildren();
+    feedWrap.append(el("p", "history-status", "Не удалось загрузить переписку."));
+    feedWrap.append(button("btn btn--ghost", "Повторить", () => renderHistoryPanelDetail(ticket)));
     return;
   }
 
-  historyDetailFeedEl.replaceChildren();
+  feedWrap.replaceChildren();
   for (const m of data.messages || []) {
     let node;
     if (m.role === "user") node = buildUserMessage(m.text).row;
     else if (m.role === "operator") node = buildOperatorMessage(m.text).row;
     else node = buildBotMessage(m.text).row;
-    historyDetailFeedEl.append(node);
+    feedWrap.append(node);
   }
   if (!data.messages || !data.messages.length) {
-    historyDetailFeedEl.append(el("p", "history-status", "В этом обращении пока нет сообщений."));
+    feedWrap.append(el("p", "history-status", "В этом обращении пока нет сообщений."));
   }
 
-  renderHistoryDetailActions(ticket);
+  const actions = el("div", "history-detail-actions");
+  panelHistoryBody.append(actions);
+  renderHistoryDetailActions(actions, ticket);
 }
 
-function renderHistoryDetailActions(ticket) {
-  historyDetailActionsEl.replaceChildren();
+function renderHistoryDetailActions(container, ticket) {
+  container.replaceChildren();
   const kind = historyActionKind(ticket);
 
   if (kind === "continue") {
-    historyDetailActionsEl.append(button("btn btn--primary", "Продолжить", () => {
+    container.append(button("btn btn--primary", "Продолжить", () => {
+      closeEdgePanel();
       resumeTicket({ ticketId: ticket.ticket_id, token: ticket.token, publicNo: ticket.public_no });
     }));
   } else if (kind === "escalated") {
-    historyDetailActionsEl.append(button("btn btn--primary", "Открыть переписку", () => {
+    container.append(button("btn btn--primary", "Открыть переписку", () => {
+      closeEdgePanel();
       resumeTicket({ ticketId: ticket.ticket_id, token: ticket.token, publicNo: ticket.public_no });
     }));
   } else {
-    historyDetailActionsEl.append(button("btn btn--primary", "Проблема вернулась", () => returnToProblem(ticket)));
+    container.append(button("btn btn--primary", "Проблема вернулась", () => {
+      closeEdgePanel();
+      returnToProblem(ticket);
+    }));
   }
 }
 

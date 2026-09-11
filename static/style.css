@@ -341,15 +341,11 @@ button { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
-/* ---------- F1: поиск по базе знаний ---------- */
-/* Намеренно компактная строка, а не второй большой composer: это
-   второстепенная функция, ей не нужен тот же визуальный вес, что у главного
-   поля ввода. Счётчик инструкций — в placeholder (см. app.js), отдельной
-   строки под полем больше нет — раньше именно она чаще всего утягивала
-   экран за пределы одного окна без прокрутки. */
-.kb-search {
-  text-align: left;
-}
+/* ---------- Поиск по базе знаний (внутри правой краевой панели) ---------- */
+/* Компактная строка, а не второй большой composer: это второстепенная
+   функция, ей не нужен тот же визуальный вес, что у главного поля ввода.
+   Счётчик инструкций — в placeholder (см. app.js), отдельной строки под
+   полем нет. */
 
 .kb-search-box {
   display: flex;
@@ -985,26 +981,131 @@ button { font: inherit; color: inherit; }
 .card-status { margin: 0; font-size: 0.9375rem; color: var(--text-muted); }
 .card-status:empty { display: none; }
 
-/* ---------- F5: «Мои обращения» ---------- */
+/* ---------- Краевые вкладки: «История обращений» / «Поиск по базе знаний» ----------
+   Одна цельная фигура на вкладку — прямоугольник с вырезанным носиком
+   (сам вырез и есть стрелка), текст просто центруется внутри. Фиксированы
+   к вьюпорту, поэтому видны и на главной, и в диалоге. Размер одинаков
+   у обеих вкладок независимо от длины подписи. */
+.edge-tab {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 60;
+  width: 2.5rem;
+  height: 8.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: opacity var(--dur) ease, transform var(--dur) ease, background-color var(--dur);
+}
+.edge-tab:hover { background: var(--accent-hover); }
 
-.history,
-.history-detail {
-  flex: 1 0 auto;
-  padding: 1.5rem 1.25rem 2rem;
+.edge-tab.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.edge-tab--left.is-hidden { transform: translateY(-50%) translateX(-12px); }
+.edge-tab--right.is-hidden { transform: translateY(-50%) translateX(12px); }
+
+.edge-tab--left {
+  left: 0;
+  clip-path: polygon(0 0, 68% 0, 100% 50%, 68% 100%, 0 100%);
+}
+.edge-tab--right {
+  right: 0;
+  clip-path: polygon(32% 0, 100% 0, 100% 100%, 32% 100%, 0 50%);
 }
 
-.history-inner,
-.history-detail-inner {
-  width: 100%;
-  max-width: var(--content-w);
-  margin: 0 auto;
+.edge-tab-label {
+  writing-mode: vertical-rl;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.edge-tab--left .edge-tab-label { transform: rotate(180deg); }
+
+/* Подложка — блокирует клики мимо открытой панели, пока она не закрыта
+   крестиком: работать с остальным сайтом в это время нельзя. */
+.edge-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(26, 26, 26, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) ease;
+}
+.edge-backdrop.is-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.history-title {
+.edge-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 65;
+  width: 82%;
+  max-width: 20rem;
+  background: var(--card);
+  box-shadow: 0 8px 24px rgba(26, 26, 26, .16);
+  transition: transform 0.32s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.125rem calc(1.25rem + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+.edge-panel--left { left: 0; transform: translateX(-100%); border-radius: 0 16px 16px 0; }
+.edge-panel--right { right: 0; transform: translateX(100%); border-radius: 16px 0 0 16px; }
+.edge-panel.is-open { transform: translateX(0); }
+
+/* Кнопка закрытия — сбоку панели, на том же краю экрана, откуда она
+   выехала (там, где раньше была вкладка), а не в шапке. Едет вместе
+   с панелью и её же transform'ом прячется за край при закрытии. */
+.edge-panel-close {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.5rem;
+  height: 2.75rem;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.edge-panel-close:hover { background: var(--accent-hover); }
+.edge-panel--left .edge-panel-close { left: 0; border-radius: 0 8px 8px 0; }
+.edge-panel--right .edge-panel-close { right: 0; border-radius: 8px 0 0 8px; }
+
+.edge-panel-title {
   margin: 0 0 1rem;
-  font-size: 1.375rem;
+  font-size: 1.0625rem;
   font-weight: 700;
 }
+
+.edge-panel-back {
+  align-self: flex-start;
+  margin: 0 0 0.875rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+.edge-panel-back:hover { color: var(--accent-hover); }
+
+/* ---------- Списки внутри панелей: история обращений ---------- */
 
 .history-status {
   margin: 0;
@@ -1114,9 +1215,11 @@ button { font: inherit; color: inherit; }
   .card-actions .btn { flex: 1 1 100%; } /* кнопки друг под другом, текст в одну строку */
   .dock { padding-left: 0.875rem; padding-right: 0.875rem; }
 
-  .history,
-  .history-detail { padding: 1rem 0.875rem 1.5rem; }
-  .history-detail-actions .btn { flex: 1 1 100%; }
+  .history-detail-actions .btn { flex: 1 1 100%; } /* кнопки друг под другом, текст в одну строку */
+
+  .edge-tab { width: 2rem; height: 7rem; }
+  .edge-tab-label { font-size: 0.75rem; }
+  .edge-panel { width: 88%; }
 }
 
 
