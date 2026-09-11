@@ -84,8 +84,8 @@ button { font: inherit; color: inherit; }
   height: 100%;
   transition: transform 0.32s ease;
 }
-.page-shell.is-shifted-right { transform: translateX(33%); }
-.page-shell.is-shifted-left { transform: translateX(-33%); }
+.page-shell.is-shifted-right { transform: translateX(4.5rem); }
+.page-shell.is-shifted-left { transform: translateX(-4.5rem); }
 
 /* ---------- Шапка ---------- */
 
@@ -1002,8 +1002,8 @@ button { font: inherit; color: inherit; }
   top: 50%;
   transform: translateY(-50%);
   z-index: 60;
-  width: 3.25rem;
-  height: 10rem;
+  width: 5.5rem;
+  height: 20rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1030,18 +1030,18 @@ button { font: inherit; color: inherit; }
    съедает фон», с которым разбирались). */
 .edge-tab--left {
   left: 0;
-  padding-right: 1.125rem;
+  padding-right: 2rem;
   clip-path: polygon(0 0, 68% 0, 100% 50%, 68% 100%, 0 100%);
 }
 .edge-tab--right {
   right: 0;
-  padding-left: 1.125rem;
+  padding-left: 2rem;
   clip-path: polygon(32% 0, 100% 0, 100% 100%, 32% 100%, 0 50%);
 }
 
 .edge-tab-label {
   writing-mode: vertical-rl;
-  font-size: 0.9375rem;
+  font-size: 1.0625rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -1235,9 +1235,13 @@ button { font: inherit; color: inherit; }
 
   .history-detail-actions .btn { flex: 1 1 100%; } /* кнопки друг под другом, текст в одну строку */
 
-  .edge-tab { width: 2.75rem; height: 8.5rem; }
-  .edge-tab-label { font-size: 0.8125rem; }
+  .edge-tab { width: 4rem; height: 14rem; }
+  .edge-tab-label { font-size: 0.9375rem; }
+  .edge-tab--left { padding-right: 1.375rem; }
+  .edge-tab--right { padding-left: 1.375rem; }
   .edge-panel { width: 92%; }
+  .page-shell.is-shifted-right { transform: translateX(2.5rem); }
+  .page-shell.is-shifted-left { transform: translateX(-2.5rem); }
 }
 
 
