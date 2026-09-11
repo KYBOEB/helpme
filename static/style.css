@@ -70,11 +70,22 @@ button { font: inherit; color: inherit; }
 /* ---------- Каркас ---------- */
 
 .app {
-  display: flex;
-  flex-direction: column;
   height: 100vh;
   height: 100dvh;
 }
+
+/* Обёртка над «обычным» содержимым сайта — именно её двигаем в сторону,
+   когда открыта краевая панель (см. .edge-tab ниже), а не .app целиком:
+   подложка/вкладки/панели лежат вне page-shell, поэтому transform на ней
+   их не задевает и они остаются на месте относительно окна. */
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: transform 0.32s ease;
+}
+.page-shell.is-shifted-right { transform: translateX(33%); }
+.page-shell.is-shifted-left { transform: translateX(-33%); }
 
 /* ---------- Шапка ---------- */
 
@@ -991,8 +1002,8 @@ button { font: inherit; color: inherit; }
   top: 50%;
   transform: translateY(-50%);
   z-index: 60;
-  width: 2.5rem;
-  height: 8.5rem;
+  width: 3.25rem;
+  height: 10rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1012,18 +1023,25 @@ button { font: inherit; color: inherit; }
 .edge-tab--left.is-hidden { transform: translateY(-50%) translateX(-12px); }
 .edge-tab--right.is-hidden { transform: translateY(-50%) translateX(12px); }
 
+/* padding-right/left резервирует под носик ровно столько места, сколько
+   он максимум забирает по clip-path (32% ширины) — иначе при центровании
+   по всей ширине блока часть текста попадает на скошенный край и
+   обрезается, а под ним остаётся видна страница (тот самый «текст
+   съедает фон», с которым разбирались). */
 .edge-tab--left {
   left: 0;
+  padding-right: 1.125rem;
   clip-path: polygon(0 0, 68% 0, 100% 50%, 68% 100%, 0 100%);
 }
 .edge-tab--right {
   right: 0;
+  padding-left: 1.125rem;
   clip-path: polygon(32% 0, 100% 0, 100% 100%, 32% 100%, 0 50%);
 }
 
 .edge-tab-label {
   writing-mode: vertical-rl;
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -1051,8 +1069,8 @@ button { font: inherit; color: inherit; }
   top: 0;
   bottom: 0;
   z-index: 65;
-  width: 82%;
-  max-width: 20rem;
+  width: 88%;
+  max-width: 27rem;
   background: var(--card);
   box-shadow: 0 8px 24px rgba(26, 26, 26, .16);
   transition: transform 0.32s ease;
@@ -1217,9 +1235,9 @@ button { font: inherit; color: inherit; }
 
   .history-detail-actions .btn { flex: 1 1 100%; } /* кнопки друг под другом, текст в одну строку */
 
-  .edge-tab { width: 2rem; height: 7rem; }
-  .edge-tab-label { font-size: 0.75rem; }
-  .edge-panel { width: 88%; }
+  .edge-tab { width: 2.75rem; height: 8.5rem; }
+  .edge-tab-label { font-size: 0.8125rem; }
+  .edge-panel { width: 92%; }
 }
 
 

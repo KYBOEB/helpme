@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Помоги мне — техподдержка</title>
   <!-- Никаких CDN: только локальные файлы -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/static/style.css?v=11">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="app.js" defer></script>
+  <script src="/static/app.js?v=11" defer></script>
 </head>
 <body>
   <div class="app">
+    <!-- page-shell — обёртка над всем «обычным» содержимым сайта. При
+         открытии краевой панели именно её, а не .app, сдвигаем в сторону
+         (F2 из последней правки): подложка/вкладки/панели лежат СНАРУЖИ
+         этой обёртки, поэтому transform на ней их не задевает — они всё
+         так же position:fixed относительно окна, а не .page-shell. -->
+    <div class="page-shell" id="page-shell">
 
     <!-- Шапка: название; слева в диалоге появляется кнопка «на главную»,
          справа — «Специалист» (F4). «История обращений» и «Поиск по базе
@@ -61,9 +67,9 @@
                отдельно от текста, не накладывая поверх лишних символов.
                В покое все три стоят вплотную и выглядят одним логотипом. -->
           <div class="hero-logo" role="img" aria-label="Актион">
-            <img class="logo-piece logo-piece--left" src="img/logo-left.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--mid" src="img/logo-mid.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--right" src="img/logo-right.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--left" src="/static/img/logo-left.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--mid" src="/static/img/logo-mid.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--right" src="/static/img/logo-right.png" alt="" aria-hidden="true">
           </div>
           <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
           <p class="empty-text">ИТ-поддержка ТПУ — опишите проблему, найдём решение.</p>
@@ -128,10 +134,14 @@
     <!-- Нижняя панель: сюда переезжает поле ввода, когда начался диалог -->
     <footer id="dock" class="dock" hidden></footer>
 
+    </div>
+
     <!-- Краевые вкладки: «История обращений» слева, «Поиск по базе знаний»
          справа. Видны всегда (и на главной, и в диалоге). Клик выдвигает
-         панель с той же стороны и прячет обе вкладки; вернуться к работе
-         с остальным сайтом можно только закрыв панель крестиком сбоку. -->
+         панель с той же стороны, прячет обе вкладки и сдвигает page-shell
+         в сторону — так фон не перекрывается криво, а просто отъезжает.
+         Вернуться к работе с остальным сайтом можно только закрыв панель
+         крестиком сбоку. -->
     <button class="edge-tab edge-tab--left" id="edge-tab-history" type="button">
       <span class="edge-tab-label">История обращений</span>
     </button>

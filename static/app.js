@@ -103,7 +103,7 @@ const state = {
 // ---------- DOM ----------
 
 let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl;
-let composerEl, heroSlotEl, dockEl, backBtn, resumeEl;
+let composerEl, heroSlotEl, dockEl, backBtn, resumeEl, pageShellEl;
 let specialistBtn;
 let edgeTabHistory, edgeTabSearch, edgeBackdrop;
 let panelHistory, panelHistoryBody, panelHistoryClose;
@@ -125,6 +125,7 @@ function init() {
   dockEl = document.getElementById("dock");
   backBtn = document.getElementById("back-btn");
   resumeEl = document.getElementById("resume");
+  pageShellEl = document.getElementById("page-shell");
 
   specialistBtn = document.getElementById("specialist-btn");
 
@@ -1332,6 +1333,12 @@ function openEdgePanel(which) {
   panel.inert = false;
   edgeBackdrop.classList.add("is-visible");
 
+  // Фон отъезжает в сторону, противоположную панели: левая панель выезжает
+  // слева — значит фон сдвигаем вправо, и наоборот. Так подписи и кнопки
+  // на заднем плане остаются целиком видны, а не перекрываются криво.
+  pageShellEl.classList.remove("is-shifted-left", "is-shifted-right");
+  pageShellEl.classList.add(isHistory ? "is-shifted-right" : "is-shifted-left");
+
   if (isHistory) loadHistoryPanel();
   panel.querySelector(".edge-panel-close")?.focus({ preventScroll: true });
 }
@@ -1345,6 +1352,7 @@ function closeEdgePanel() {
   edgeTabHistory.classList.remove("is-hidden");
   edgeTabSearch.classList.remove("is-hidden");
   edgeTabHistory.tabIndex = edgeTabSearch.tabIndex = 0;
+  pageShellEl.classList.remove("is-shifted-left", "is-shifted-right");
 }
 
 async function loadHistoryPanel() {
