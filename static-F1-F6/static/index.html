@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Помоги мне — техподдержка</title>
   <!-- Никаких CDN: только локальные файлы -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/static/style.css?v=7">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="app.js" defer></script>
+  <script src="/static/app.js?v=7" defer></script>
 </head>
 <body>
   <div class="app">
@@ -63,7 +63,7 @@
                ЛОГОТИП: файл кладётся в static/img/aktion-logo.png.
                Если папка или имя файла другие — поменяйте src в строке ниже. -->
           <div class="hero-logo">
-            <img src="img/aktion-logo.png" alt="Актион" width="509" height="71">
+            <img src="/static/img/aktion-logo.png" alt="Актион" width="509" height="71">
           </div>
           <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
           <p class="empty-text">ИТ-поддержка ТПУ — опишите проблему, найдём решение.</p>
@@ -84,39 +84,58 @@
             </div>
           </div>
 
-          <!-- F1: категории каталога услуг, 2 строки по 3. Клик подставляет пример
-               в поле ввода — не отправляет сразу, человек может дописать своими словами.
-               Подсказка-пример — в title (всплывает при наведении), в самой плитке
-               только иконка и название, чтобы не перегружать текстом. -->
+          <!-- F1: категории каталога услуг, прямоугольные плитки в 2 колонки —
+               иконка, название и пример вопроса. Клик подставляет пример
+               в поле ввода, не отправляет сразу. -->
           <p class="catalog-title">Частые категории:</p>
           <div class="catalog">
-            <button type="button" class="catalog-tile" data-fill="Не включается компьютер на рабочем месте" title="Не включается компьютер на рабочем месте">
+            <button type="button" class="catalog-tile" data-fill="Не включается компьютер на рабочем месте">
               <span class="catalog-icon" aria-hidden="true">🖥️</span>
-              <span class="catalog-name">Рабочее место</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Рабочее место</span>
+                <span class="catalog-example">Не включается компьютер</span>
+              </span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Нужен доступ к сетевой папке отдела" title="Нужен доступ к сетевой папке отдела">
+            <button type="button" class="catalog-tile" data-fill="Нужен доступ к сетевой папке отдела">
               <span class="catalog-icon" aria-hidden="true">🔑</span>
-              <span class="catalog-name">Доступы</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Доступы</span>
+                <span class="catalog-example">Нужен доступ к папке</span>
+              </span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не подключается корпоративный VPN" title="Не подключается корпоративный VPN">
+            <button type="button" class="catalog-tile" data-fill="Не подключается корпоративный VPN">
               <span class="catalog-icon" aria-hidden="true">🔒</span>
-              <span class="catalog-name">VPN</span>
+              <span class="catalog-text">
+                <span class="catalog-name">VPN</span>
+                <span class="catalog-example">Не подключается VPN</span>
+              </span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не приходят письма на рабочую почту" title="Не приходят письма на рабочую почту">
+            <button type="button" class="catalog-tile" data-fill="Не приходят письма на рабочую почту">
               <span class="catalog-icon" aria-hidden="true">📧</span>
-              <span class="catalog-name">Почта</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Почта</span>
+                <span class="catalog-example">Не приходят письма</span>
+              </span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не подключается к корпоративному Wi-Fi" title="Не подключается к корпоративному Wi-Fi">
+            <button type="button" class="catalog-tile" data-fill="Не подключается к корпоративному Wi-Fi">
               <span class="catalog-icon" aria-hidden="true">📶</span>
-              <span class="catalog-name">Wi-Fi</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Wi-Fi</span>
+                <span class="catalog-example">Не подключается Wi-Fi</span>
+              </span>
             </button>
-            <button type="button" class="catalog-tile" data-fill="Не печатает принтер" title="Не печатает принтер">
+            <button type="button" class="catalog-tile" data-fill="Не печатает принтер">
               <span class="catalog-icon" aria-hidden="true">🖨️</span>
-              <span class="catalog-name">Оборудование</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Оборудование</span>
+                <span class="catalog-example">Не печатает принтер</span>
+              </span>
             </button>
           </div>
 
-          <!-- F1: поиск по базе знаний, GET /api/kb/search -->
+          <!-- F1: поиск по базе знаний, GET /api/kb/search. Компактная строка —
+               счётчик инструкций встроен прямо в placeholder (app.js), отдельной
+               строки под ней больше нет, чтобы не растягивать экран по высоте. -->
           <div class="kb-search">
             <label for="kb-search-input" class="visually-hidden">Поиск по базе знаний</label>
             <div class="kb-search-box">
@@ -124,7 +143,6 @@
               <input id="kb-search-input" type="text" placeholder="Поиск по базе знаний…" autocomplete="off">
             </div>
             <ul id="kb-search-results" class="kb-search-results" hidden></ul>
-            <p id="kb-count" class="kb-count" hidden></p>
           </div>
         </div>
       </section>

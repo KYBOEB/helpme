@@ -197,13 +197,15 @@ button { font: inherit; color: inherit; }
 
 /* ---------- Главный экран ---------- */
 
-/* Блок центрируется по вертикали, чуть выше середины; на низких экранах просто скроллится */
+/* Экран центрируется по вертикали, но не любой ценой: если верх/низ не
+   помещаются, лучше чуть сжать отступы, чем заставлять листать страницу
+   ради поиска по базе знаний. */
 .empty {
   flex: 1 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem 1.25rem 8vh;
+  padding: 1.5rem 1.25rem 2rem;
 }
 
 .empty-inner {
@@ -218,80 +220,85 @@ button { font: inherit; color: inherit; }
   align-items: center;
   justify-content: center;
   width: fit-content;
-  margin: 0 auto 1.25rem;
-  padding: 1rem 1.5rem;
+  margin: 0 auto 1rem;
+  padding: 0.75rem 1.25rem;
   border-radius: var(--radius);
   background: var(--accent-soft);
 }
 
 .hero-logo img {
   display: block;
-  width: 12rem;
+  width: 10rem;
   max-width: 100%;
   height: auto;
 }
 
 .empty-title {
-  margin: 0 0 0.5rem;
-  font-size: 1.75rem;
+  margin: 0 0 0.375rem;
+  font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.2;
 }
 
 .empty-text {
-  margin: 0 0 1.5rem;
+  margin: 0 0 1.125rem;
   color: var(--text-muted);
 }
 
 .hero-slot {
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
   text-align: left;
 }
 
 /* ---------- F1: каталог категорий ---------- */
 
 .catalog-title {
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.625rem;
   font-size: 0.9375rem;
   color: var(--text-muted);
   text-align: left;
 }
 
-/* 2 строки по 3 — компактные квадратные плитки, иконка + название.
-   Пример вопроса — в title (подсказка при наведении), в самой плитке текста
-   меньше, поэтому сетка не разъезжается и хорошо ложится в 3 колонки. */
+/* Прямоугольные плитки в 2 колонки — иконка слева, название и пример
+   вопроса стопкой справа. Ширины и текста тут больше, чем в квадратном
+   варианте, зато сама сетка ниже — это и держит экран без прокрутки. */
 .catalog {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.625rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1.125rem;
 }
 
 .catalog-tile {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  aspect-ratio: 1 / 0.82;
-  padding: 0.75rem 0.5rem;
-  text-align: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.875rem;
+  text-align: left;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: border-color var(--dur), background-color var(--dur), transform var(--dur);
+  transition: border-color var(--dur), background-color var(--dur);
 }
 
 .catalog-tile:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
-  transform: translateY(-1px);
 }
 
 .catalog-icon {
-  font-size: 1.5rem;
+  flex: none;
+  font-size: 1.25rem;
   line-height: 1;
+}
+
+.catalog-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+  min-width: 0;
 }
 
 .catalog-name {
@@ -300,8 +307,20 @@ button { font: inherit; color: inherit; }
   line-height: 1.25;
 }
 
-/* ---------- F1: поиск по базе знаний ---------- */
+.catalog-example {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
+/* ---------- F1: поиск по базе знаний ---------- */
+/* Намеренно компактная строка, а не второй большой composer: это
+   второстепенная функция, ей не нужен тот же визуальный вес, что у главного
+   поля ввода. Счётчик инструкций — в placeholder (см. app.js), отдельной
+   строки под полем больше нет — раньше именно она чаще всего утягивала
+   экран за пределы одного окна без прокрутки. */
 .kb-search {
   text-align: left;
 }
@@ -310,7 +329,7 @@ button { font: inherit; color: inherit; }
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.875rem;
+  padding: 0.375rem 0.75rem;
   background: var(--card);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
@@ -319,7 +338,7 @@ button { font: inherit; color: inherit; }
 
 .kb-search-box:focus-within { border-color: var(--accent); }
 
-.kb-search-icon { flex: none; }
+.kb-search-icon { flex: none; font-size: 0.9375rem; }
 
 .kb-search-box input {
   flex: 1;
@@ -328,6 +347,8 @@ button { font: inherit; color: inherit; }
   background: transparent;
   color: inherit;
   font: inherit;
+  font-size: 0.875rem;
+  padding: 0.25rem 0;
 }
 
 .kb-search-box input:focus,
@@ -356,12 +377,6 @@ button { font: inherit; color: inherit; }
 .kb-result:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
-}
-
-.kb-count {
-  margin: 0.625rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--text-muted);
 }
 
 /* ---------- Поле ввода ---------- */
@@ -1060,14 +1075,13 @@ button { font: inherit; color: inherit; }
   .header-btn-label { display: none; }
   .header-actions { gap: 0.375rem; }
 
-  .empty { padding: 1.5rem 0.875rem 2rem; }
-  .hero-logo { padding: 0.75rem 1.125rem; margin-bottom: 1rem; }
-  .hero-logo img { width: 9.5rem; }
-  .empty-title { font-size: 1.5rem; }
-  .hero-slot { margin-bottom: 1.5rem; }
-  .catalog { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
-  .catalog-tile { aspect-ratio: 1 / 0.72; padding: 0.625rem 0.375rem; }
-  .catalog-name { font-size: 0.8125rem; }
+  .empty { padding: 1.25rem 0.875rem 1.5rem; }
+  .hero-logo { padding: 0.625rem 1rem; margin-bottom: 0.75rem; }
+  .hero-logo img { width: 8.5rem; }
+  .empty-title { font-size: 1.375rem; }
+  .hero-slot { margin-bottom: 1rem; }
+  .catalog { grid-template-columns: 1fr; gap: 0.5rem; }
+  .catalog-tile { min-height: 3rem; padding: 0.5rem 0.75rem; }
 
   .feed { padding: 1rem 0.875rem; }
   .step-card { padding: 0.875rem 1rem 1rem; }

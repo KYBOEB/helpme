@@ -110,7 +110,7 @@ let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl;
 let composerEl, heroSlotEl, dockEl, backBtn, backBtnLabel, resumeEl;
 let specialistBtn, historyBtn;
 let historyEl, historyListEl, historyDetailEl, historyDetailFeedEl, historyDetailActionsEl;
-let kbSearchInput, kbResultsEl, kbCountEl;
+let kbSearchInput, kbResultsEl;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 document.addEventListener("DOMContentLoaded", init);
@@ -139,7 +139,6 @@ function init() {
 
   kbSearchInput = document.getElementById("kb-search-input");
   kbResultsEl = document.getElementById("kb-search-results");
-  kbCountEl = document.getElementById("kb-count");
 
   inputEl.maxLength = MAX_LEN;
   inputEl.addEventListener("input", onInput);
@@ -1293,18 +1292,19 @@ function renderKbResults(items) {
   });
 }
 
-// Счётчик «в базе знаний N инструкций» — реальное число из API, не хардкод.
+// Счётчик «N инструкций» — реальное число из API, не хардкод. Раньше был
+// отдельной строкой под полем и растягивал экран по высоте — теперь просто
+// часть плейсхолдера, дополнительного места не занимает.
 async function loadKbCount() {
-  if (!kbCountEl) return;
+  if (!kbSearchInput) return;
   let items;
   try {
     items = await kbSearch("", 1000);
   } catch {
-    return; // тихо прячем счётчик, если бэкенд недоступен — это не критично
+    return; // бэкенд недоступен — оставляем обычный плейсхолдер, это не критично
   }
   if (!Array.isArray(items)) return;
-  kbCountEl.textContent = `В базе знаний ${items.length} ${pluralInstructions(items.length)}.`;
-  kbCountEl.hidden = false;
+  kbSearchInput.placeholder = `Поиск по базе знаний · ${items.length} ${pluralInstructions(items.length)}`;
 }
 
 function pluralInstructions(n) {
