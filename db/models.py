@@ -71,6 +71,13 @@ class Ticket(Base):
     closed_by_user: Mapped[bool] = mapped_column(Boolean, default=False)
     # пользователя уже попросили описать проблему в ответ на просьбу о специалисте
     specialist_asked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Анонимный посетитель, к которому относится обращение. Хранится ХЭШ, а не
+    # сам идентификатор: идентификатор — это мастер-ключ ко всем обращениям
+    # человека, и дамп базы не должен его выдавать.
+    client_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    # Повторное обращение по уже закрытому: «проблема вернулась». Закрытое
+    # обращение при этом не переоткрывается — создаётся новое, со ссылкой сюда.
+    parent_ticket_id: Mapped[str | None] = mapped_column(String(32), default=None)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="ticket",
                                                      cascade="all, delete-orphan")

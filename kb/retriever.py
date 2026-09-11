@@ -1,6 +1,8 @@
 """Гибридный поиск по базе знаний: BM25 (+ опционально эмбеддинги через RRF)."""
 from __future__ import annotations
 
+import logging
+import os
 from typing import Callable, Optional
 
 import numpy as np
@@ -9,16 +11,45 @@ from rank_bm25 import BM25Okapi
 from common.models import Article
 from kb.normalize import tokenize
 
+log = logging.getLogger(__name__)
 
 EmbedFn = Callable[[list[str]], np.ndarray]
 _RRF_K = 60
 
+# Глубина списков, которые идут в объединение.
+#
+# Здесь была ошибка, стоившая эффекта от эмбеддингов. BM25 отдаёт только
+# документы с ненулевым скором — обычно единицы. Векторный поиск отдавал ВСЕ
+# документы базы, потому что косинус не бывает нулевым. RRF складывал короткий
+# точный список с длинным шумным, и статья, стоявшая у BM25 первой, проигрывала
+# случайной, оказавшейся первой у эмбеддингов: 1/61 + 1/65 < 1/62 + 1/61.
+# Поэтому оба списка обрезаются до одной глубины, и только потом объединяются.
+_FUSE_DEPTH = int(os.getenv("KB_FUSE_DEPTH", "15"))
+
+# Ниже этой похожести векторный список не участвует вовсе: если лучший косинус
+# мал, значит в базе нет ничего близкого, и добавлять такой список к выдаче —
+# добавлять шум к точному лексическому совпадению.
+_MIN_COSINE = float(os.getenv("KB_MIN_COSINE", "0.25"))
+
 
 def _article_text(article: Article) -> str:
-    """Текст карточки для индексации: title + symptoms + category."""
+    """Текст карточки для индексации: заголовок, категория, симптомы и шаги.
+
+    Шаги добавлены после разбора провальных запросов. «Бумага есть, а печати
+    нет» не находило статью KB-HW-001 ни лексически, ни по смыслу — слово
+    «бумага» есть только в шаге «проверьте, есть ли бумага и не закончился ли
+    тонер», а шаги в индекс не попадали. Пользователь описывает проблему теми
+    же словами, которыми написано решение, поэтому решение тоже надо
+    индексировать.
+
+    Длина документа BM25 не ломает: Okapi BM25 нормирует скор на длину.
+    """
     parts = [article.title, article.category]
     parts.extend(article.symptoms)
-    return " \n ".join(parts)
+    parts.extend(article.steps)
+    if article.escalate_if:
+        parts.append(article.escalate_if)
+    return " \n ".join(p for p in parts if p)
 
 
 def _rrf_fuse(rankings: list[list[int]], k: int = _RRF_K) -> dict[int, float]:
@@ -72,6 +103,15 @@ class HybridRetriever:
             norms[norms == 0] = 1.0
             self._emb_matrix = emb / norms
 
+    @property
+    def semantic(self) -> bool:
+        """Работает ли поиск по смыслу, или это чистая лексика.
+
+        Нужно наружу: в README и на защите про режим поиска говорим то, что
+        есть на самом деле, а не то, что задумывалось.
+        """
+        return self._emb_matrix is not None and self.embed_fn is not None
+
     # ---------- публичный API ----------
 
     def search(self, query: str, top_k: int = 5) -> list[tuple[Article, float]]:
@@ -83,13 +123,20 @@ class HybridRetriever:
         rankings: list[list[int]] = []
 
         # 1. BM25 → ранжированный список индексов
-        bm25_ranking = self._bm25_ranking(query)
+        bm25_ranking = self._bm25_ranking(query)[:_FUSE_DEPTH]
         if bm25_ranking:
             rankings.append(bm25_ranking)
 
-        # 2. Эмбеддинги → второй ранжированный список
-        if self._emb_matrix is not None and self.embed_fn is not None:
-            emb_ranking = self._embedding_ranking(query)
+        # 2. Эмбеддинги → второй ранжированный список.
+        #    Векторизация запроса ходит в сеть, а сеть иногда отваливается.
+        #    Поиск обязан пережить это молча и отдать хотя бы лексический
+        #    результат: пустая выдача выглядит как «система не работает».
+        if self.semantic:
+            try:
+                emb_ranking = self._embedding_ranking(query)[:_FUSE_DEPTH]
+            except Exception as exc:  # noqa: BLE001
+                log.warning("векторный поиск недоступен, остаётся BM25: %s", exc)
+                emb_ranking = []
             if emb_ranking:
                 rankings.append(emb_ranking)
 
@@ -131,15 +178,57 @@ class HybridRetriever:
         order = np.argsort(-scores)
         return [int(i) for i in order if scores[i] > 0]
 
-    def _embedding_ranking(self, query: str) -> list[int]:
+    def _similarities(self, query: str) -> np.ndarray | None:
+        """Косинусная близость запроса ко всем карточкам."""
         assert self._emb_matrix is not None and self.embed_fn is not None
         q = np.asarray(self.embed_fn([query]), dtype=np.float32)
         if q.ndim == 2:
             q = q[0]
         n = np.linalg.norm(q)
         if n == 0:
+            return None
+        return self._emb_matrix @ (q / n)
+
+    def _embedding_ranking(self, query: str) -> list[int]:
+        sims = self._similarities(query)
+        if sims is None:
             return []
-        q = q / n
-        sims = self._emb_matrix @ q
-        order = np.argsort(-sims)
-        return [int(i) for i in order]
+        # Порог отсекает случай «в базе нет ничего похожего». Без него список
+        # отдавался всегда, даже когда лучший косинус был на уровне шума,
+        # и портил точную лексическую выдачу.
+        if float(sims.max()) < _MIN_COSINE:
+            log.info("векторный поиск: лучшая близость %.2f ниже порога %.2f, "
+                     "список не участвует", float(sims.max()), _MIN_COSINE)
+            return []
+        return [int(i) for i in np.argsort(-sims)]
+
+    # ---------- диагностика ----------
+
+    def explain(self, query: str, article_id: str) -> dict:
+        """Где статья стоит в каждом сигнале по отдельности.
+
+        Нужно, чтобы не гадать, почему запрос не находится: виноват лексический
+        поиск, векторный или объединение. Используется tools/check_search.py.
+        """
+        target = next((i for i, a in enumerate(self.articles) if a.id == article_id), None)
+        out: dict = {"article_id": article_id, "bm25": None,
+                     "embed": None, "similarity": None, "best_similarity": None}
+        if target is None:
+            return out
+
+        bm25_ranking = self._bm25_ranking(query)
+        if target in bm25_ranking:
+            out["bm25"] = bm25_ranking.index(target) + 1
+
+        if self.semantic:
+            try:
+                sims = self._similarities(query)
+            except Exception as exc:  # noqa: BLE001
+                out["error"] = str(exc)[:120]
+                return out
+            if sims is not None:
+                order = [int(i) for i in np.argsort(-sims)]
+                out["embed"] = order.index(target) + 1
+                out["similarity"] = round(float(sims[target]), 3)
+                out["best_similarity"] = round(float(sims.max()), 3)
+        return out

@@ -43,7 +43,10 @@ def fake_route(user_text, history, candidates, known_slots):
 demo_cache.cached_route = fake_route
 demo_cache.cached_answer = lambda article, slots, text: AnswerResult(
     text="", steps=list(article.steps))
-assist.general_help = lambda text, category: AnswerResult(
+# Сигнатура с exclude_steps: в неё передаются шаги, которые пользователю уже
+# показали и которые не помогли. Заглушка их принимает и игнорирует —
+# отсев повторов проверяется отдельно, здесь важно поведение автомата.
+assist.general_help = lambda text, category, exclude_steps=None: AnswerResult(
     text="Готовой инструкции нет.", steps=["Общий шаг 1", "Общий шаг 2"])
 
 

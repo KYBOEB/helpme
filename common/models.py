@@ -92,6 +92,16 @@ class ChatRequest(BaseModel):
     message: Optional[str] = Field(default="", max_length=2000)
     quick_reply: Optional[str] = None     # если пользователь нажал кнопку
 
+    # Анонимный посетитель: по нему собирается история обращений. Сервер
+    # выдаёт идентификатор при первом обращении, браузер хранит его и присылает
+    # дальше. В базу он попадает только в виде хэша.
+    client_id: Optional[str] = Field(default=None, max_length=128)
+
+    # «Проблема вернулась»: новое обращение по мотивам старого. Токен нужен,
+    # чтобы нельзя было подтянуть контекст чужого обращения, зная его номер.
+    parent_ticket_id: Optional[str] = Field(default=None, max_length=32)
+    parent_token: Optional[str] = Field(default=None, max_length=128)
+
 
 class Reply(BaseModel):
     # "closed" — обращение закрыто системой как нецелевое: специалиста не зовём.
@@ -125,6 +135,13 @@ class TicketCard(BaseModel):
 class ChatResponse(BaseModel):
     ticket_id: str
     token: str
+    # Короткий номер: в интерфейсе показывается он, а не внутренний ticket_id.
+    public_no: int = 0
+    # Заполняется ТОЛЬКО когда идентификатор выдан впервые. В остальных ответах
+    # None: нет причин гонять по сети секрет, который у браузера уже есть.
+    client_id: Optional[str] = None
+    # Номер обращения, по которому это создано повторно («проблема вернулась»).
+    parent_public_no: Optional[int] = None
     state: Literal["NEW", "CLASSIFYING", "CLARIFYING", "SOLVING",
                    "VERIFYING", "RESOLVED", "ESCALATED"]
     category: Optional[str] = None

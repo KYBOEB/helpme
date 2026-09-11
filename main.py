@@ -25,6 +25,7 @@ log = logging.getLogger("helpme")
 
 from api import chat as chat_api        # noqa: E402
 from api import export as export_api      # noqa: E402
+from api import my as my_api              # noqa: E402
 from api import operator as operator_api  # noqa: E402
 from api import tickets as tickets_api  # noqa: E402
 from db import repo                     # noqa: E402
@@ -51,6 +52,7 @@ app.include_router(chat_api.router)
 # перехватит /api/tickets/export.csv и примет "export.csv" за номер обращения.
 app.include_router(export_api.router)
 app.include_router(export_api.public_router)
+app.include_router(my_api.router)
 app.include_router(operator_api.router)
 app.include_router(tickets_api.router)
 

@@ -49,7 +49,17 @@ _NEW_COLUMNS = {
         "public_no": "INTEGER",
         "closed_by_user": "BOOLEAN DEFAULT 0",
         "specialist_asked": "BOOLEAN DEFAULT 0",
+        "client_hash": "VARCHAR(64)",
+        "parent_ticket_id": "VARCHAR(32)",
     },
+}
+
+# Индексы для колонок, по которым идёт поиск. Без индекса выборка обращений
+# посетителя — полный перебор таблицы, и с ростом базы она начнёт тормозить
+# ровно там, где пользователь ждёт список.
+_INDEXES = {
+    "ix_tickets_client_hash": "tickets(client_hash)",
+    "ix_tickets_parent": "tickets(parent_ticket_id)",
 }
 
 
@@ -61,6 +71,8 @@ def init_db() -> None:
             for name, ddl in columns.items():
                 if name not in existing:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+        for name, target in _INDEXES.items():
+            conn.exec_driver_sql(f"CREATE INDEX IF NOT EXISTS {name} ON {target}")
 
 
 def get_session() -> Session:
@@ -86,6 +98,28 @@ def list_tickets(db: Session, limit: int = 200,
             stmt = stmt.where(Ticket.state == state)
         stmt = stmt.order_by(Ticket.created_at.desc())
     return list(db.scalars(stmt.limit(limit)))
+
+
+def tickets_for_client(db: Session, client_hash: str, limit: int = 20) -> list[Ticket]:
+    """Обращения одного анонимного посетителя, свежие первыми.
+
+    Пустой хэш не должен возвращать «все обращения без владельца» — это была бы
+    выдача чужой переписки любому, кто пришёл без идентификатора.
+    """
+    if not client_hash:
+        return []
+    stmt = (select(Ticket)
+            .where(Ticket.client_hash == client_hash)
+            .order_by(Ticket.created_at.desc())
+            .limit(max(1, min(limit, 50))))
+    return list(db.scalars(stmt))
+
+
+def public_no_of(db: Session, ticket_id: str | None) -> int | None:
+    """Короткий номер обращения по внутреннему идентификатору."""
+    if not ticket_id:
+        return None
+    return db.scalar(select(Ticket.public_no).where(Ticket.id == ticket_id))
 
 
 def add_message(db: Session, ticket_id: str, role: str, content: str) -> None:

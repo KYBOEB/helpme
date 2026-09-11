@@ -34,6 +34,9 @@ def _brief(t) -> dict:
         "closed_by_user": bool(t.closed_by_user),
         "user_actions_count": t.user_actions_count,
         "rating": t.rating,
+        # Повторное обращение: специалисту важно видеть, что человек приходит
+        # с этим второй раз, и что старое обращение закрывали зря.
+        "parent_ticket_id": t.parent_ticket_id,
     }
 
 

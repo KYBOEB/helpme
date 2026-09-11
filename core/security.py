@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import secrets
 import time
 from collections import defaultdict, deque
@@ -21,6 +22,26 @@ def new_ticket_id() -> str:
 
 def new_token() -> str:
     return "s_" + secrets.token_urlsafe(24)
+
+
+# ------------------------------------------- анонимный посетитель (история)
+
+def new_client_id() -> str:
+    """Идентификатор посетителя. Живёт в браузере, к личности не привязан."""
+    return "c_" + secrets.token_urlsafe(24)
+
+
+def client_hash(client_id: str | None) -> str | None:
+    """Хэш идентификатора посетителя — то, что попадает в базу.
+
+    Сам идентификатор — мастер-ключ ко всем обращениям человека. Если хранить
+    его открытым текстом, дамп базы отдаёт всю переписку всех посетителей.
+    Хэш детерминированный, поэтому поиск по нему работает без расшифровки,
+    а обратно из базы идентификатор не достать.
+    """
+    if not client_id or len(client_id) < 16:
+        return None
+    return hashlib.sha256(client_id.encode("utf-8")).hexdigest()
 
 
 def check_owner(ticket, token: str | None) -> None:

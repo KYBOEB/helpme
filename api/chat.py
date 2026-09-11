@@ -81,6 +81,15 @@ def chat_updates(payload: dict = Body(...)) -> dict:
                 steps = []
         return {
             "ticket_id": ticket_id,
+            # Короткий номер: в интерфейсе показывается он. До этой правки
+            # страница печатала «Обращение №t_c18c55b3b7bd» — внутренний
+            # идентификатор, который человеку не продиктовать.
+            "public_no": ticket.public_no,
+            "parent_public_no": repo.public_no_of(db, ticket.parent_ticket_id),
+            "category": ticket.category,
+            "confidence": round(ticket.confidence or 0.0, 2),
+            "resolution": ticket.resolution,
+            "rating": ticket.rating,
             "state": ticket.state,
             "operator_taken": bool(ticket.operator_taken),
             "steps": steps,
