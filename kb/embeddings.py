@@ -33,10 +33,19 @@ log = logging.getLogger(__name__)
 
 INDEX_PATH = os.getenv("KB_EMB_INDEX", "kb/emb_index.npz")
 
-# Сколько векторов обращений держим в памяти. Обращения повторяются (демонстрация,
-# наполнение базы, типовые проблемы), поэтому кэш экономит и время, и деньги.
-_QUERY_CACHE_MAX = 2000
+# Кэш векторов обращений. Раньше жил только в памяти и умирал вместе
+# с процессом: после каждой пересборки контейнера первые обращения снова
+# платили за сеть, а платит за неё пользователь — ожиданием.
+# Теперь кэш ещё и на диске, в томе data/, и переживает пересборку.
+QUERY_CACHE_PATH = os.getenv("KB_EMB_QUERIES", "data/emb_queries.npz")
+
+_QUERY_CACHE_MAX = 5000
 _query_cache: dict[str, np.ndarray] = {}
+_query_cache_loaded = False
+_unsaved = 0
+# Пишем на диск не на каждый вектор, а пачками: запись файла под каждым
+# обращением — лишняя работа на горячем пути.
+_SAVE_EVERY = 10
 
 
 class EmbeddingsUnavailable(RuntimeError):
@@ -128,10 +137,56 @@ def _remote(texts: list[str]) -> np.ndarray:
     return matrix
 
 
+def load_query_cache() -> None:
+    """Поднять кэш векторов обращений с диска. Ошибки не критичны."""
+    global _query_cache_loaded
+    if _query_cache_loaded:
+        return
+    _query_cache_loaded = True
+    if not os.path.exists(QUERY_CACHE_PATH):
+        return
+    try:
+        data = np.load(QUERY_CACHE_PATH, allow_pickle=False)
+        keys = [str(k) for k in data["keys"]]
+        vectors = np.asarray(data["vectors"], dtype=np.float32)
+        model = str(data["model"].item()) if "model" in data else ""
+        if model and model != _current_model():
+            log.info("кэш обращений собран другой моделью, не используем")
+            return
+        if len(keys) == vectors.shape[0]:
+            _query_cache.update(dict(zip(keys, vectors)))
+            log.info("кэш векторов обращений поднят с диска: %s штук", len(keys))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("кэш векторов обращений не читается: %s", exc)
+
+
+def save_query_cache() -> None:
+    """Сохранить кэш обращений. Тихо, без последствий при неудаче."""
+    global _unsaved
+    if not _query_cache:
+        return
+    try:
+        os.makedirs(os.path.dirname(QUERY_CACHE_PATH) or ".", exist_ok=True)
+        keys = list(_query_cache.keys())
+        np.savez_compressed(
+            QUERY_CACHE_PATH,
+            keys=np.array(keys),
+            vectors=np.asarray([_query_cache[k] for k in keys], dtype=np.float32),
+            model=np.array(_current_model()),
+        )
+        _unsaved = 0
+    except Exception as exc:  # noqa: BLE001
+        log.warning("кэш векторов обращений не сохранился: %s", exc)
+
+
 def _cache_query(key: str, vector: np.ndarray) -> None:
+    global _unsaved
     if len(_query_cache) >= _QUERY_CACHE_MAX:
         _query_cache.clear()          # кэш вспомогательный, LRU здесь избыточен
     _query_cache[key] = vector
+    _unsaved += 1
+    if _unsaved >= _SAVE_EVERY:
+        save_query_cache()
 
 
 def make_embed_fn(store: dict[str, np.ndarray] | None = None):
@@ -147,6 +202,7 @@ def make_embed_fn(store: dict[str, np.ndarray] | None = None):
     store = store if store is not None else load_store()
     if store is None:
         return None
+    load_query_cache()
 
     def embed_fn(texts: list[str]) -> np.ndarray:
         keys = [text_key(t) for t in texts]

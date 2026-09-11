@@ -31,6 +31,16 @@ _FUSE_DEPTH = int(os.getenv("KB_FUSE_DEPTH", "15"))
 # добавлять шум к точному лексическому совпадению.
 _MIN_COSINE = float(os.getenv("KB_MIN_COSINE", "0.25"))
 
+# Порог «лексический поиск и так уверен»: если лучший скор BM25 не ниже его,
+# за вектором в сеть не идём вовсе. Это экономит пользователю секунды ожидания
+# на тех обращениях, где BM25 и так попадает в цель (в замере это 15 из 18).
+#
+# Ноль — выключено, и это значение по умолчанию: порог зависит от базы знаний,
+# ставить его наугад нельзя. Нужные цифры печатает tools/check_search.py
+# в колонке «скор BM25»: берите значение чуть ниже самого слабого скора среди
+# запросов, которые BM25 находит верно.
+_SKIP_VECTOR_SCORE = float(os.getenv("KB_SKIP_VECTOR_SCORE", "0"))
+
 
 def _article_text(article: Article) -> str:
     """Текст карточки для индексации: заголовок, категория, симптомы и шаги.
@@ -131,7 +141,12 @@ class HybridRetriever:
         #    Векторизация запроса ходит в сеть, а сеть иногда отваливается.
         #    Поиск обязан пережить это молча и отдать хотя бы лексический
         #    результат: пустая выдача выглядит как «система не работает».
-        if self.semantic:
+        skip_vectors = (_SKIP_VECTOR_SCORE > 0
+                        and self.raw_top1_score(query) >= _SKIP_VECTOR_SCORE)
+        if skip_vectors:
+            log.info("BM25 уверен, вектор запроса не считаем")
+
+        if self.semantic and not skip_vectors:
             try:
                 emb_ranking = self._embedding_ranking(query)[:_FUSE_DEPTH]
             except Exception as exc:  # noqa: BLE001

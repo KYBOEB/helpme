@@ -61,7 +61,10 @@ def run(retriever: HybridRetriever, label: str, diag: bool = False) -> int:
         hits += ok
         mark = "+" if ok else "-"
         where = f"место {found.index(expected) + 1}" if ok else f"нет в топ-{TOP_K}"
-        print(f"  {mark} {query!r:48} → {where}")
+        # Скор BM25 нужен, чтобы подобрать KB_SKIP_VECTOR_SCORE: порог, выше
+        # которого за вектором в сеть можно не ходить вовсе.
+        score = retriever.raw_top1_score(query)
+        print(f"  {mark} {query!r:48} → {where:16} скор BM25 {score:5.1f}")
 
         # Для промахов показываем, какой именно сигнал не сработал: лексический,
         # векторный или объединение. Иначе поиск чинится гаданием.
@@ -95,6 +98,20 @@ def main() -> None:
 
     hybrid = run(HybridRetriever(articles, embed_fn=embed_fn),
                  "BM25 + эмбеддинги (RRF) — как стало", diag=True)
+
+    # Подсказка по порогу: ниже какого скора BM25 начинает промахиваться.
+    ok_scores, miss_scores = [], []
+    plain = HybridRetriever(articles)
+    for query, expected in CASES:
+        found = [a.id for a, _ in plain.search(query, top_k=TOP_K)]
+        (ok_scores if expected in found else miss_scores).append(
+            plain.raw_top1_score(query))
+    if ok_scores and miss_scores:
+        print(f"\nСкор BM25: на попаданиях от {min(ok_scores):.1f}, "
+              f"на промахах до {max(miss_scores):.1f}.")
+        if min(ok_scores) > max(miss_scores):
+            print(f"Можно не ходить в сеть за вектором, когда BM25 и так уверен: "
+                  f"KB_SKIP_VECTOR_SCORE={min(ok_scores):.0f}")
 
     print(f"\nПрирост: {hybrid - lexical} запросов из {len(CASES)}")
     if hybrid < lexical:
