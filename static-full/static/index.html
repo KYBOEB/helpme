@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Помоги мне — техподдержка</title>
   <!-- Никаких CDN: только локальные файлы -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/static/style.css?v=8">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="app.js" defer></script>
+  <script src="/static/app.js?v=8" defer></script>
 </head>
 <body>
   <div class="app">
@@ -59,11 +59,16 @@
            поиск по базе знаний -->
       <section id="empty" class="empty">
         <div class="empty-inner">
-          <!-- Плашка с логотипом компании.
-               ЛОГОТИП: файл кладётся в static/img/aktion-logo.png.
-               Если папка или имя файла другие — поменяйте src в строке ниже. -->
-          <div class="hero-logo">
-            <img src="img/aktion-logo.png" alt="Актион" width="509" height="71">
+          <!-- Плашка с логотипом компании — собрана из трёх файлов
+               (static/img/logo-left.png / logo-mid.png / logo-right.png),
+               порезанных из оригинального aktion-logo.png ровно по шву
+               между «уголками» и словом: так уголки можно анимировать
+               отдельно от текста, не накладывая поверх лишних символов.
+               В покое все три стоят вплотную и выглядят одним логотипом. -->
+          <div class="hero-logo" role="img" aria-label="Актион">
+            <img class="logo-piece logo-piece--left" src="/static/img/logo-left.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--mid" src="/static/img/logo-mid.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--right" src="/static/img/logo-right.png" alt="" aria-hidden="true">
           </div>
           <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
           <p class="empty-text">ИТ-поддержка ТПУ — опишите проблему, найдём решение.</p>

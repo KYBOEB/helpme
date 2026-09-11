@@ -214,7 +214,9 @@ button { font: inherit; color: inherit; }
   text-align: center;
 }
 
-/* Плашка логотипа: прямоугольник, ширина по логотипу */
+/* Плашка логотипа: прямоугольник, ширина по логотипу. Собран из трёх
+   кусков (см. index.html) — display:flex ставит их вплотную, поэтому
+   в покое выглядит одним цельным логотипом. */
 .hero-logo {
   display: flex;
   align-items: center;
@@ -226,11 +228,36 @@ button { font: inherit; color: inherit; }
   background: var(--accent-soft);
 }
 
-.hero-logo img {
+.logo-piece {
   display: block;
-  width: 10rem;
-  max-width: 100%;
-  height: auto;
+  height: 1.4rem;
+  width: auto;
+}
+
+/* Раз в 10 секунд уголки логотипа уезжают за рамку плашки и гаснут,
+   секунду их нет, и они снова просто появляются на своём месте —
+   не «выезжают» обратно, а именно проявляются. Слово «актион»
+   посередине не двигается вообще. */
+.logo-piece--left,
+.logo-piece--right {
+  animation-duration: 10s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.logo-piece--left { animation-name: chevron-left; }
+.logo-piece--right { animation-name: chevron-right; }
+
+@keyframes chevron-left {
+  0%, 70%  { transform: translateX(0); opacity: 1; }
+  78%      { transform: translateX(-70%); opacity: 0; }
+  79%, 89% { transform: translateX(0); opacity: 0; }
+  100%     { transform: translateX(0); opacity: 1; }
+}
+@keyframes chevron-right {
+  0%, 70%  { transform: translateX(0); opacity: 1; }
+  78%      { transform: translateX(70%); opacity: 0; }
+  79%, 89% { transform: translateX(0); opacity: 0; }
+  100%     { transform: translateX(0); opacity: 1; }
 }
 
 .empty-title {
@@ -1077,7 +1104,7 @@ button { font: inherit; color: inherit; }
 
   .empty { padding: 1.25rem 0.875rem 1.5rem; }
   .hero-logo { padding: 0.625rem 1rem; margin-bottom: 0.75rem; }
-  .hero-logo img { width: 8.5rem; }
+  .logo-piece { height: 1.2rem; }
   .empty-title { font-size: 1.375rem; }
   .hero-slot { margin-bottom: 1rem; }
   .catalog { grid-template-columns: 1fr; gap: 0.5rem; }
@@ -1109,5 +1136,10 @@ button { font: inherit; color: inherit; }
     animation-name: typing-fade !important;
     animation-duration: 1.6s !important;
     animation-iteration-count: infinite !important;
+  }
+  /* Уголки логотипа — совсем без анимации, а не «раз мигнуть и замереть» */
+  .logo-piece--left,
+  .logo-piece--right {
+    animation: none !important;
   }
 }
