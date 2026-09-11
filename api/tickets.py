@@ -229,7 +229,9 @@ def stats(period: str = "all") -> dict:
                     if t.state in ("RESOLVED", "ESCALATED") and not t.out_of_scope]
         solved = [t for t in finished if t.resolved_by_bot]
         # Оценка бинарная: 1 — помогло, 0 — нет. Считаем долю полезных ответов.
-        rated = [t.rating for t in tickets if t.rating is not None]
+        # Значения прижимаем к 0..1: в базе могли остаться оценки старой
+        # пятибалльной шкалы, и без этого «полезность» показывала 340 %.
+        rated = [min(1, max(0, int(t.rating))) for t in tickets if t.rating is not None]
         actions = [t.user_actions_count for t in solved]
 
         # среднее время от создания обращения до первого шага решения

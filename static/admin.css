@@ -29,7 +29,7 @@
 }
 
 .admin-main {
-  max-width: 1200px;
+  max-width: 1480px;
   margin: 0 auto;
   padding: 1.5rem;
 }
@@ -145,11 +145,24 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9375rem;
-  white-space: nowrap;
+  table-layout: auto;
 }
 
+/* Колонки, которые обязаны помещаться целиком, иначе правый край уезжает */
+.admin-body .tickets-table th:nth-child(4),
+.admin-body .tickets-table td:nth-child(4),
+.admin-body .tickets-table th:nth-child(6),
+.admin-body .tickets-table td:nth-child(6),
+.admin-body .tickets-table th:nth-child(7),
+.admin-body .tickets-table td:nth-child(7) { white-space: nowrap; text-align: center; }
+
+.admin-body .tickets-table th:nth-child(1),
+.admin-body .tickets-table td:nth-child(1),
+.admin-body .tickets-table th:nth-child(2),
+.admin-body .tickets-table td:nth-child(2) { white-space: nowrap; }
+
 .admin-body .tickets-table th {
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 0.75rem;
   text-align: left;
   font-size: 0.75rem;
   font-weight: 700;
@@ -161,8 +174,9 @@
 }
 
 .admin-body .tickets-table td {
-  padding: 0.75rem 1rem;
+  padding: 0.75rem;
   border-bottom: 1px solid var(--border);
+  vertical-align: middle;
 }
 
 .admin-body .tickets-table tbody tr:last-child td { border-bottom: 0; }
@@ -173,9 +187,14 @@
 }
 .admin-body .tickets-table tbody tr:hover { background: var(--accent-soft); }
 
-.admin-body .tickets-table td:first-child {
+/* Короткий номер — обычным шрифтом: знак «№» есть не во всех моноширинных
+   шрифтах и подставляется из запасного, что выглядит как посторонний символ.
+   Моноширинный оставляем только для старых обращений с внутренним id. */
+.admin-body .tickets-table td:first-child { font-weight: 600; }
+.admin-body .tickets-table td.mono {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 0.8125rem;
+  font-weight: 400;
   color: var(--text-muted);
 }
 

@@ -36,14 +36,21 @@ MAX_CLARIFYING_QUESTIONS = int(os.getenv("MAX_CLARIFYING_QUESTIONS", "2"))
 _articles: list[Article] = []
 _retriever: HybridRetriever | None = None
 _by_id: dict[str, Article] = {}
+_by_title: dict[str, Article] = {}
+
+# Кнопка «ничего из этого» на экране уточнения
+OTHER_QR = "Другое"
 
 
 def reload_kb() -> int:
     """Перечитать базу знаний. Вызывается на старте и после правок из панели."""
-    global _articles, _retriever, _by_id
+    global _articles, _retriever, _by_id, _by_title
     _articles = kb_store.all_articles()
     _retriever = HybridRetriever(_articles)
     _by_id = {a.id: a for a in _articles}
+    # Заголовок → статья: по нему узнаём вариант, который пользователь выбрал
+    # кнопкой на экране уточнения. Тогда ни поиск, ни модель уже не нужны.
+    _by_title = {a.title.strip().lower(): a for a in _articles}
     return len(_articles)
 
 
@@ -134,10 +141,12 @@ def _escalate(db: Session, ticket: Ticket, reason: str) -> ChatResponse:
 
     _notify_external(db, ticket)
 
-    number = f"№{ticket.public_no}" if ticket.public_no else ""
-    text = (f"{intro} Передаю обращение {number} специалисту поддержки. "
-            f"Категорию, ваши ответы и выполненные шаги он уже видит, "
-            f"объяснять заново ничего не нужно.").replace("  ", " ").strip()
+    # Номер обращения пользователю не показываем: для него это лишний шум,
+    # он всё равно продолжает диалог в этом же окне. Номер нужен оператору
+    # и виден в панели, в выгрузке и в карточке для внешней системы.
+    text = (f"{intro} Передаю обращение специалисту поддержки. Категорию, ваши "
+            f"ответы и выполненные шаги он уже видит, объяснять заново ничего "
+            f"не нужно.").replace("  ", " ").strip()
     return _respond(db, ticket, Reply(type="escalation", text=text), with_card=True)
 
 
@@ -364,6 +373,32 @@ def _ask_slot(db: Session, ticket: Ticket, key: str) -> ChatResponse:
 
 def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     """Найти кандидатов, спросить модель, решить что делать дальше."""
+    text_key = user_text.strip().lower()
+
+    # Пользователь выбрал вариант кнопкой на экране уточнения. Он сам сказал,
+    # какая у него проблема — ни поиск, ни модель тут уже не нужны.
+    picked = _by_title.get(text_key)
+    if picked is not None:
+        ticket.category = picked.category
+        ticket.article_id = picked.id
+        ticket.confidence = 1.0
+        ticket.problem_summary = ticket.problem_summary or picked.title
+        repo.log_event(db, ticket.id, "picked_suggestion", {"article_id": picked.id})
+        slots_now = repo.slots_dict(db, ticket.id)
+        missing = [s.key for s in picked.required_slots
+                   if not s.optional and s.key not in slots_now]
+        if missing and ticket.clarify_count < MAX_CLARIFYING_QUESTIONS:
+            return _ask_slot(db, ticket, missing[0])
+        return _solve(db, ticket)
+
+    # «Другое» на том же экране — ни один вариант не подошёл
+    if text_key == OTHER_QR.lower():
+        ticket.state = "NEW"
+        return _respond(db, ticket, Reply(
+            type="question",
+            text=("Хорошо. Опишите проблему подробнее: что вы делали, что "
+                  "произошло и какой текст ошибки видите на экране.")))
+
     # Локальная страховка до обращения к модели: бессмыслицу видно и без ИИ,
     # а лишний вызов модели на «asdfgh» — потраченные деньги и время.
     if _looks_like_nonsense(user_text):
@@ -423,19 +458,24 @@ def _classify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
     if article_id is None:
         return _assist(db, ticket, user_text)
 
-    # Уверенности не хватает — не гадаем, а предлагаем выбрать
+    # Уверенности не хватает — не гадаем, а показываем, что нашёл поиск.
+    # Раньше предлагались абстрактные категории («VPN», «оборудование»), и по
+    # ним пользователю было трудно понять, о чём речь. Теперь предлагаем
+    # конкретные проблемы — заголовки статей, — плюс «Другое», если мимо.
     if ticket.confidence < CONFIDENCE_THRESHOLD:
         ticket.state = "CLASSIFYING"
         options, seen = [], set()
         for a in candidates:
-            if a.category not in seen:
-                seen.add(a.category)
-                options.append(a.category)
+            if a.title in seen:
+                continue
+            seen.add(a.title)
+            options.append(a.title)
             if len(options) == 3:
                 break
+        options.append(OTHER_QR)
         return _respond(db, ticket, Reply(
             type="choice",
-            text="Уточните, пожалуйста, к чему относится проблема:",
+            text="Не уверен, что понял вопрос. Возможно, вы имеете в виду:",
             quick_replies=options))
 
     # Чего не хватает для решения
@@ -482,11 +522,7 @@ def _verify(db: Session, ticket: Ticket, user_text: str) -> ChatResponse:
         repo.log_event(db, ticket.id, "resolved",
                        {"actions": ticket.user_actions_count})
         text = answerer.make_summary(_card(db, ticket))
-        # Карточку-плашку в чате больше не рисуем — итог должен быть в самом
-        # тексте, иначе пользователь читает одно и то же дважды. Номер нужен,
-        # чтобы человек мог сослаться на обращение.
-        if ticket.public_no:
-            text = f"{text}\n\nОбращение №{ticket.public_no} закрыто."
+        # Карточку-плашку в чате больше не рисуем: итог целиком в тексте.
         return _respond(db, ticket, Reply(type="summary", text=text), with_card=True)
 
     # Ответ непонятен — переспрашиваем один раз, не меняя состояния

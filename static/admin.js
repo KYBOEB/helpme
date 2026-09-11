@@ -203,7 +203,11 @@ function renderTickets() {
     const s = statusInfo(t);
     const tr = el("tr", { "data-id": t.ticket_id });
     tr.append(
-      el("td", { text: t.public_no ? `№${t.public_no}` : (t.ticket_id ?? "—"), title: t.ticket_id ?? "" }),
+      el("td", {
+        class: t.public_no ? "" : "mono",
+        text: t.public_no ? String(t.public_no) : (t.ticket_id ?? "—"),
+        title: t.ticket_id ?? "",
+      }),
       el("td", { text: fmtDate(t.created_at) }),
       el("td", {}, [
         el("span", { text: t.category ?? "—" }),

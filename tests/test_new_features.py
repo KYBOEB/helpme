@@ -368,6 +368,70 @@ check("карточка обращения формируется и выгру�
       str(card)[:140])
 
 
+# ------------------- 16. экран уточнения: конкретные проблемы, а не категории
+
+from core import dialog as _dialog  # noqa: E402
+
+_route_plan.append(RouteResult(category="VPN", article_id="KB-VPN-001",
+                               confidence=0.4, problem_summary="непонятно что"))
+d = chat("не подключается vpn на ноутбуке").json()
+tid16, tok16 = d["ticket_id"], d["token"]
+opts = d["reply"].get("quick_replies", [])
+check("при низкой уверенности показываем варианты",
+      d["reply"]["type"] == "choice" and len(opts) >= 2, str(d["reply"])[:180])
+check("последний вариант — «Другое»", opts and opts[-1] == _dialog.OTHER_QR,
+      str(opts))
+check("варианты — заголовки статей, а не категории",
+      any(o.strip().lower() in _dialog._by_title for o in opts[:-1]), str(opts))
+
+# выбор варианта ведёт прямо к этой статье
+title = next(o for o in opts[:-1] if o.strip().lower() in _dialog._by_title)
+d2 = chat(quick_reply=title, ticket_id=tid16, token=tok16).json()
+expected_id = _dialog._by_title[title.strip().lower()].id
+check("выбранный вариант ведёт именно к этой статье",
+      (d2.get("article") or {}).get("id") == expected_id
+      or d2["reply"]["type"] == "question",
+      str(d2.get("article")))
+brief = client.get(f"/api/tickets/{tid16}").json()
+check("после выбора варианта статья записана в обращение",
+      brief["article_id"] == expected_id, str(brief["article_id"]))
+check("уверенность после выбора пользователем максимальная",
+      brief["confidence"] == 1.0, str(brief["confidence"]))
+
+# «Другое» просит описать подробнее и не закрывает обращение
+_route_plan.append(RouteResult(category="VPN", article_id="KB-VPN-001",
+                               confidence=0.4, problem_summary="непонятно"))
+d = chat("проблема с vpn подключением").json()
+d3 = chat(quick_reply=_dialog.OTHER_QR,
+          ticket_id=d["ticket_id"], token=d["token"]).json()
+check("«Другое» просит описать подробнее",
+      d3["reply"]["type"] == "question" and d3["state"] != "RESOLVED",
+      str(d3["reply"])[:150])
+check("«Другое» не считается нецелевым обращением",
+      "не относится" not in d3["reply"]["text"], d3["reply"]["text"][:120])
+
+
+# ------------------- 17. полезность не выходит за 100 %
+
+s = client.get("/api/stats").json()
+check("полезность не превышает 100%",
+      s["usefulness"] is None or 0.0 <= s["usefulness"] <= 1.0,
+      str(s.get("usefulness")))
+
+
+# ------------------- 18. номера обращения нет в сообщениях пользователю
+
+d = chat("не подключается VPN").json()
+tid18, tok18 = d["ticket_id"], d["token"]
+r = client.post(f"/api/tickets/{tid18}/escalate", json={"token": tok18})
+upd = client.post("/api/chat/updates",
+                  json={"ticket_id": tid18, "token": tok18,
+                        "after": 0, "full": True}).json()
+bot_texts = " ".join(m["text"] for m in upd["messages"] if m["role"] == "assistant")
+check("в сообщениях пользователю нет номера обращения",
+      "№" not in bot_texts, bot_texts[-160:])
+
+
 print()
 if FAILED:
     print(f"ПРОВАЛЕНО {len(FAILED)}: " + "; ".join(FAILED))
