@@ -96,7 +96,7 @@ const state = {
 
 // ---------- DOM ----------
 
-let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl;
+let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl, headerTicketEl;
 let composerEl, heroSlotEl, dockEl, backBtn, resumeEl, pageShellEl;
 let specialistBtn;
 let edgeTabHistory, edgeTabSearch, edgeBackdrop;
@@ -122,6 +122,7 @@ function init() {
   pageShellEl = document.getElementById("page-shell");
 
   specialistBtn = document.getElementById("specialist-btn");
+  headerTicketEl = document.getElementById("header-ticket");
 
   edgeTabHistory = document.getElementById("edge-tab-history");
   edgeTabSearch = document.getElementById("edge-tab-search");
@@ -242,6 +243,7 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
   }
 
   if (data.ticket_id) state.ticketId = data.ticket_id;
+  if (typeof data.public_no === "number") setHeaderTicket(data.public_no);
   if (data.token) state.token = data.token;
   if (data.client_id) saveClientId(data.client_id);
   if (typeof data.public_no === "number") state.lastPublicNo = data.public_no;
@@ -460,7 +462,9 @@ function renderSteps(data) {
   const card = buildStepsCard(steps, source);
   msg.body.append(card);
   renderQuickReplies(msg.body, reply.quick_replies);
-  appendRatingIfKnown(msg.body, data, { onlyIf: true });
+  // Оценку здесь НЕ показываем: после «Проблема решена» сервер сразу
+  // присылает итог, и там она уже есть. Два блока «Помог ли ответ?»
+  // подряд — это не забота, а баг.
   scrollToMessage(msg.row);
 }
 
@@ -511,9 +515,18 @@ function buildStepsCard(steps, source) {
 
   function paint() {
     items.forEach((li, i) => {
-      li.classList.toggle("is-done", i < current);
+      const passed = i < current;
+      li.classList.toggle("is-passed", passed);
       li.classList.toggle("is-current", i === current);
       li.classList.toggle("is-later", i > current);
+      // Символ ставим текстом, а не псевдоэлементом: у кружка
+      // display:grid, и ::after становился ВТОРЫМ элементом сетки —
+      // цифра уезжала в одну строку, галочка в другую.
+      //
+      // И знак именно крестик, а не галочка: пользователь нажал
+      // «Следующий шаг», то есть этот шаг НЕ помог. Зелёная галочка
+      // говорила бы обратное.
+      li.querySelector(".step-num").textContent = passed ? "✕" : String(i + 1);
     });
     counter.textContent = `Шаг ${current + 1} из ${total}`;
     progress.setAttribute("aria-valuenow", String(current + 1));
@@ -617,11 +630,11 @@ function renderCard(data) {
     return;
   }
 
-  // F3: карточка обращения — категория, суть, что попробовали, собранные
-  // сведения, исход и дата. Раньше это было видно только в панели оператора.
-  const ticketCardEl = renderTicketCard(card);
-  if (ticketCardEl) msg.body.append(ticketCardEl);
-
+  // Карточки обращения в ленте больше нет: её содержимое разъехалось
+  // туда, где оно не дублируется. Номер — в шапке, с момента создания
+  // обращения. Формулировка проблемы и исход — в самом тексте итога
+  // над этим блоком. Слоты, шаги и дата остаются в панели оператора,
+  // выгрузке и вебхуке, где ими действительно пользуются.
   msg.body.append(renderRating(ticketId));
 
   const actions = el("div", "msg-actions card-actions");
@@ -800,6 +813,19 @@ function callSpecialist() {
   send({ quickReply: QR_CALL_SPECIALIST });
 }
 
+// Номер обращения в шапке, справа от названия. Появляется в тот момент,
+// когда обращение создано, и исчезает при возврате на главную.
+function setHeaderTicket(publicNo) {
+  if (!headerTicketEl) return;
+  if (typeof publicNo === "number" && publicNo > 0) {
+    headerTicketEl.textContent = `Обращение №${publicNo}`;
+    headerTicketEl.hidden = false;
+  } else {
+    headerTicketEl.textContent = "";
+    headerTicketEl.hidden = true;
+  }
+}
+
 function syncSpecialistButton() {
   specialistBtn.hidden = state.screen !== "chat" || state.done;
 }
@@ -902,7 +928,10 @@ async function resumeTicket(saved) {
   // Правило 6: внутренний ticket_id пользователю не показываем никогда —
   // только короткий public_no, и то если он уже пришёл с сервера.
   const publicNo = typeof data.public_no === "number" ? data.public_no : saved.publicNo;
-  if (typeof publicNo === "number") state.lastPublicNo = publicNo;
+  if (typeof publicNo === "number") {
+    state.lastPublicNo = publicNo;
+    setHeaderTicket(publicNo);
+  }
   const note = addBotMessage(publicNo
     ? `Обращение №${publicNo} восстановлено. Продолжайте — контекст я помню.`
     : "Обращение восстановлено. Продолжайте — контекст я помню.");
@@ -1177,6 +1206,7 @@ function resetConversation() {
   state.ticketId = null;
   state.token = null;
   state.lastMsgId = 0;
+  setHeaderTicket(null);
   state.lastPublicNo = null;
   state.done = false;
   state.lastClassifyKey = null;
@@ -1559,6 +1589,7 @@ async function returnToProblem(ticket) {
   state.ticketId = null;
   state.token = null;
   state.lastMsgId = 0;
+  setHeaderTicket(null);
   state.lastPublicNo = null;
   state.done = false;
   state.lastClassifyKey = null;

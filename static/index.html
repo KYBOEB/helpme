@@ -9,9 +9,9 @@
        "app.js" браузер запросил бы как /app.js и получил бы 404 — чат не
        загрузился бы вовсе. Версия обязательна: без неё браузер отдаёт старый
        файл из кэша, и это выглядит как «всё сломалось». -->
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="/static/app.js?v=5" defer></script>
+  <script src="/static/app.js?v=6" defer></script>
 </head>
 <body>
   <div class="app" data-screen="home">
@@ -37,6 +37,10 @@
           <h1 class="header-title">Помоги мне</h1>
           <p class="header-subtitle">Виртуальный помощник техподдержки</p>
         </div>
+        <!-- Номер обращения появляется здесь в момент создания обращения.
+             В чате его больше нет: там он дублировался и тянул за собой
+             второй блок оценки. -->
+        <span id="header-ticket" class="header-ticket" hidden></span>
         <div class="header-actions">
           <!-- F4: видна всегда, пока обращение не закрыто -->
           <button id="specialist-btn" class="header-btn" type="button" hidden>

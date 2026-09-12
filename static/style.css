@@ -1330,10 +1330,6 @@ button { font: inherit; color: inherit; }
   color: #1A1A1A;
 }
 
-.step-item.is-done .step-num::after { content: "✓"; }
-.step-item.is-done .step-num { color: transparent; background: #D6EBD9; }
-.step-item.is-done .step-num::after { color: #2E7D32; }
-.step-item.is-done .step-item-text { color: #8A8A8A; }
 
 .step-item.is-later { opacity: 0.55; }
 
@@ -1370,4 +1366,32 @@ button { font: inherit; color: inherit; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #9A9A9A;
+}
+
+/* Номер обращения в шапке: появляется, когда обращение создано. */
+.header-ticket {
+  margin-left: 0.9rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: #F4F4F4;
+  color: #6E6E6E;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .header-ticket { display: none; }
+}
+
+/* Пройденный шаг — крестик на сером: пользователь его сделал, и НЕ помогло.
+   Зелёная галочка здесь врала бы об успехе. */
+.step-item.is-passed .step-num {
+  background: #ECECEC;
+  color: #4A4A4A;
+  font-weight: 700;
+}
+
+.step-item.is-passed .step-item-text {
+  color: #9A9A9A;
+  text-decoration: none;
 }
