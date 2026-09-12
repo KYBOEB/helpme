@@ -214,9 +214,13 @@ button { font: inherit; color: inherit; }
 .empty {
   flex: 1 0 auto;
   display: flex;
-  align-items: center;
+  /* Содержимое прижато к верхней части, а не отцентровано по высоте.
+     При центрировании логотип, заголовок, поле ввода и плитки собирались
+     в плотный ком посередине экрана — смотреть тяжело. Теперь логотип
+     стоит вверху отдельно, а остальное начинается ниже. */
+  align-items: flex-start;
   justify-content: center;
-  padding: 2rem 1.25rem 8vh;
+  padding: 3vh 1.25rem 8vh;
 }
 
 .empty-inner {
@@ -233,15 +237,17 @@ button { font: inherit; color: inherit; }
   align-items: center;
   justify-content: center;
   width: fit-content;
-  margin: 0 auto 1.25rem;
-  padding: 1rem 1.5rem;
+  /* Отступ снизу больше отступа сверху: логотип читается как отдельный
+     верхний элемент, а не как первая строчка общего столбца. */
+  margin: 0 auto 3.25rem;
+  padding: 1.35rem 2.25rem;
   border-radius: var(--radius);
   background: var(--accent-soft);
 }
 
 .logo-piece {
   display: block;
-  height: 1.7rem;
+  height: 2.6rem;
   width: auto;
 }
 
@@ -279,7 +285,8 @@ button { font: inherit; color: inherit; }
 }
 
 .empty-text {
-  margin: 0 0 1.5rem;
+  margin: 0 auto 2rem;
+  max-width: 34rem;
   color: var(--text-muted);
 }
 
@@ -1361,7 +1368,7 @@ button { font: inherit; color: inherit; }
 }
 
 .empty-kicker {
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.5rem;
   font-size: 0.8125rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1401,8 +1408,13 @@ button { font: inherit; color: inherit; }
    так что кнопка — запасной путь, а не единственный. */
 .edge-panel-close {
   position: absolute;
+  /* transform сбрасываем: в исходном правиле кнопка висела сбоку панели
+     и центрировалась через translateY(-50%). Без сброса она уезжала вверх
+     на половину своей высоты. */
+  transform: none;
   top: 0.75rem;
   right: 0.75rem;
+  bottom: auto;
   left: auto;
   width: 2.25rem;
   height: 2.25rem;
@@ -1421,7 +1433,20 @@ button { font: inherit; color: inherit; }
 .edge-panel-close:hover { background: #E4E4E4; }
 .edge-panel-close:focus-visible { outline: 2px solid var(--accent, #E31E24); outline-offset: 2px; }
 
-.edge-panel { position: relative; }
 .edge-panel:focus { outline: none; }
 
 .edge-backdrop { cursor: pointer; }
+
+
+/* На невысоком экране лишний воздух сверху ни к чему — иначе плитки
+   категорий уезжают за нижний край. */
+@media (max-height: 720px) {
+  .empty { padding-top: 1.5rem; }
+  .hero-logo { margin-bottom: 2rem; padding: 1rem 1.75rem; }
+  .logo-piece { height: 2.1rem; }
+}
+
+@media (max-width: 560px) {
+  .hero-logo { margin-bottom: 2rem; padding: 0.9rem 1.35rem; }
+  .logo-piece { height: 1.9rem; }
+}

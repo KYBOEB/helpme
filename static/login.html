@@ -6,7 +6,12 @@
   <title>Вход оператора — Помоги мне</title>
   <link rel="stylesheet" href="/static/style.css?v=4">
   <style>
-    .login-wrap { display: grid; place-items: center; min-height: 100vh; padding: 1.25rem; }
+    /* margin:auto у карточки вместо place-items:center у контейнера.
+       При центрировании через place-items содержимое выше экрана обрезается
+       сверху и заголовок становится недостижим — ровно это и произошло,
+       когда карточка подросла на поле логина. margin:auto так не делает. */
+    .login-wrap { display: flex; min-height: 100vh; padding: 1.25rem; }
+    .login-card { margin: auto; }
     .login-card {
       width: 100%; max-width: 22rem; padding: 2rem;
       background: var(--card); border: 1px solid var(--border);
