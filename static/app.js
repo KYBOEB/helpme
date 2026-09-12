@@ -127,6 +127,15 @@ function init() {
   edgeTabHistory = document.getElementById("edge-tab-history");
   edgeTabSearch = document.getElementById("edge-tab-search");
   edgeBackdrop = document.getElementById("edge-backdrop");
+  // Закрывать панель кликом по свободной части экрана и клавишей Esc.
+  // Маленький крестик у края был единственным способом выйти, и попасть
+  // по нему трудно — особенно на ноутбучном тачпаде.
+  edgeBackdrop.addEventListener("click", closeEdgePanel);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && edgeBackdrop.classList.contains("is-visible")) {
+      closeEdgePanel();
+    }
+  });
   panelHistory = document.getElementById("panel-history");
   panelHistoryBody = document.getElementById("panel-history-body");
   panelHistoryClose = document.getElementById("panel-history-close");
@@ -1422,7 +1431,9 @@ function openEdgePanel(which) {
   pageShellEl.classList.add(isHistory ? "is-shifted-right" : "is-shifted-left");
 
   if (isHistory) loadHistoryPanel();
-  panel.querySelector(".edge-panel-close")?.focus({ preventScroll: true });
+  // Фокус ставим на саму панель: экранный диктор прочитает её заголовок,
+  // а не слово «Закрыть» первым делом.
+  panel.focus?.({ preventScroll: true });
 }
 
 function closeEdgePanel() {

@@ -36,8 +36,10 @@
     <form class="login-card" id="form">
       <h1>Панель оператора</h1>
       <p>Раздел для специалистов поддержки</p>
+      <label for="login">Логин</label>
+      <input id="login" type="text" autocomplete="username" value="operator" required autofocus>
       <label for="password">Пароль</label>
-      <input id="password" type="password" autocomplete="current-password" required autofocus>
+      <input id="password" type="password" autocomplete="current-password" required>
       <button type="submit">Войти</button>
       <div class="login-err" id="err"></div>
     </form>
@@ -51,7 +53,10 @@
         const r = await fetch("/api/operator/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password: document.getElementById("password").value }),
+          body: JSON.stringify({
+            login: document.getElementById("login").value,
+            password: document.getElementById("password").value,
+          }),
         });
         if (r.ok) { location.href = "/static/admin.html"; return; }
         const d = await r.json().catch(() => ({}));

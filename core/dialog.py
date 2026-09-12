@@ -20,7 +20,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from common.models import (Article, ChatRequest, ChatResponse, Reply, Slot,
+from common.models import (AnswerResult, Article, ChatRequest, ChatResponse, Reply, Slot,
                            TicketCard)
 from core import security
 from core.redact import redact
@@ -395,6 +395,21 @@ def _assist(db: Session, ticket: Ticket, user_text: str,
         type="steps", text=text, steps=answer.steps, source="general"))
 
 
+# Порог «шаг написан подробно». Короткий шаг — это «Проверьте настройки»:
+# такой нужно разворачивать моделью. Длинный уже содержит и действие, и место,
+# и ожидаемый результат.
+_DETAILED_STEP_CHARS = int(os.getenv("KB_DETAILED_STEP_CHARS", "70"))
+# Принудительно вернуть прежнее поведение: ANSWER_REWRITE=1
+_FORCE_REWRITE = os.getenv("ANSWER_REWRITE", "0") == "1"
+
+
+def _steps_are_detailed(steps: list[str]) -> bool:
+    """Шаги карточки уже годятся для показа без переписывания моделью."""
+    if _FORCE_REWRITE or not steps:
+        return False
+    return all(len(s) >= _DETAILED_STEP_CHARS for s in steps)
+
+
 def _solve(db: Session, ticket: Ticket) -> ChatResponse:
     """Выдать шаги решения из статьи."""
     art = _article(ticket)
@@ -414,7 +429,22 @@ def _solve(db: Session, ticket: Ticket) -> ChatResponse:
     if found:
         repo.log_event(db, ticket.id, "redacted", found)
 
-    answer = demo_cache.cached_answer(art, safe_slots, safe_last)
+    # Переписывать шаги моделью нужно не всегда.
+    #
+    # Раньше карточки содержали короткие шаги вроде «Проверьте срок действия
+    # сертификата: Настройки → Профиль», и умная модель разворачивала их под
+    # ситуацию. После переписывания базы шаги уже написаны для неподготовленного
+    # читателя: что сделать, где именно и что появится на экране. Гонять их через
+    # модель ещё раз — это две-пять секунд ожидания на КАЖДОМ обращении основного
+    # сценария, лишние деньги и риск, что хороший шаг испортят.
+    #
+    # Поэтому: если шаги карточки уже подробные, показываем их как есть.
+    # Это заодно честнее — пользователь видит ровно то, что написано в базе.
+    if _steps_are_detailed(art.steps):
+        answer = AnswerResult(text="", steps=list(art.steps))
+        repo.log_event(db, ticket.id, "answer_verbatim", {"article_id": art.id})
+    else:
+        answer = demo_cache.cached_answer(art, safe_slots, safe_last)
     steps = answer.steps or art.steps
     # Страховка: модель не имеет права добавлять шаги, которых нет в статье
     if len(steps) > len(art.steps):

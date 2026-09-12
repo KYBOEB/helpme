@@ -9,9 +9,9 @@
        "app.js" браузер запросил бы как /app.js и получил бы 404 — чат не
        загрузился бы вовсе. Версия обязательна: без неё браузер отдаёт старый
        файл из кэша, и это выглядит как «всё сломалось». -->
-  <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="stylesheet" href="/static/style.css?v=7">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="/static/app.js?v=6" defer></script>
+  <script src="/static/app.js?v=7" defer></script>
 </head>
 <body>
   <div class="app" data-screen="home">
@@ -165,15 +165,16 @@
       <span class="edge-tab-label">Поиск по базе знаний</span>
     </button>
 
-    <div class="edge-backdrop" id="edge-backdrop"></div>
+    <!-- Клик по подложке закрывает панель. -->
+    <div class="edge-backdrop" id="edge-backdrop" aria-hidden="true"></div>
 
-    <aside class="edge-panel edge-panel--left" id="panel-history" aria-label="История обращений">
+    <aside class="edge-panel edge-panel--left" id="panel-history" aria-label="История обращений" tabindex="-1">
       <button class="edge-panel-close" id="panel-history-close" type="button" aria-label="Закрыть">×</button>
       <h3 class="edge-panel-title">История обращений</h3>
       <div id="panel-history-body"></div>
     </aside>
 
-    <aside class="edge-panel edge-panel--right" id="panel-search" aria-label="Поиск по базе знаний">
+    <aside class="edge-panel edge-panel--right" id="panel-search" aria-label="Поиск по базе знаний" tabindex="-1">
       <button class="edge-panel-close" id="panel-search-close" type="button" aria-label="Закрыть">×</button>
       <h3 class="edge-panel-title">Поиск по базе знаний</h3>
       <label for="kb-search-input" class="visually-hidden">Поиск по базе знаний</label>

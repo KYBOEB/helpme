@@ -14,14 +14,19 @@ def login(response: Response, payload: dict = Body(...)) -> dict:
     if not auth.is_configured():
         raise HTTPException(status_code=503,
                             detail="Пароль оператора не задан на сервере")
-    if not auth.check_password(str(payload.get("password", ""))):
-        raise HTTPException(status_code=401, detail="Неверный пароль")
+    # Логин и пароль проверяются в одном месте — core.auth.find_operator.
+    # Сообщение об ошибке одинаковое для неверного логина и неверного пароля:
+    # иначе перебором можно узнать, какие учётные записи существуют.
+    who = auth.find_operator(str(payload.get("login", "")),
+                             str(payload.get("password", "")))
+    if who is None:
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
     response.set_cookie(
         auth.COOKIE_NAME, auth.make_token(),
         max_age=auth.TTL_SECONDS, httponly=True, samesite="lax", path="/",
     )
-    return {"ok": True}
+    return {"ok": True, "operator": who}
 
 
 @router.post("/api/operator/logout")

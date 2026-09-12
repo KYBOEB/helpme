@@ -21,19 +21,62 @@ TTL_SECONDS = 8 * 60 * 60
 
 _SECRET = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 _PASSWORD = os.getenv("OPERATOR_PASSWORD", "")
+_LOGIN = os.getenv("OPERATOR_LOGIN", "operator")
 
 
 def is_configured() -> bool:
     return bool(_PASSWORD)
 
 
-def check_password(password: str) -> bool:
+# ------------------------------------------------- источник учётных записей
+#
+# Единственное место, где система узнаёт, существует ли такой сотрудник
+# и подходит ли пароль. Сейчас здесь одна демонстрационная запись
+# из переменных окружения.
+#
+# Это точка подключения каталога сотрудников организации. Чтобы система
+# начала пускать по рабочим учётным записям, достаточно заменить тело
+# ОДНОЙ функции — обращением к LDAP, к таблице сотрудников или к провайдеру
+# единого входа. Всё остальное — сессия, защита методов панели, права —
+# останется как есть, потому что оно про эту функцию ничего не знает.
+#
+# Пароль сравнивается по хэшу, а не по строке: если задать
+# OPERATOR_PASSWORD_SHA256, открытого пароля на сервере не будет вовсе.
+
+_PASSWORD_SHA256 = os.getenv("OPERATOR_PASSWORD_SHA256", "").strip().lower()
+
+
+def _password_matches(password: str) -> bool:
     """Сравнение постоянного времени: по длительности ответа пароль не подобрать."""
+    password = password or ""
+    if _PASSWORD_SHA256:
+        digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(digest, _PASSWORD_SHA256)
     if not _PASSWORD:
         return False
     # сравниваем байты: compare_digest не работает с не-ASCII строками
-    return hmac.compare_digest((password or "").encode("utf-8"),
+    return hmac.compare_digest(password.encode("utf-8"),
                                _PASSWORD.encode("utf-8"))
+
+
+def find_operator(login: str, password: str) -> str | None:
+    """Проверить учётные данные. Вернуть имя вошедшего или None.
+
+    Логин необязателен: если его не прислали, работает прежний вход
+    по одному паролю. Это сделано нарочно — чтобы правка не сломала
+    уже открытые вкладки панели.
+    """
+    login = (login or "").strip()
+    if login and not hmac.compare_digest(login.lower(), _LOGIN.lower()):
+        return None
+    if not _password_matches(password):
+        return None
+    return login or _LOGIN
+
+
+def check_password(password: str) -> bool:
+    """Оставлено для совместимости с прежним кодом."""
+    return _password_matches(password)
 
 
 def _sign(payload: str) -> str:

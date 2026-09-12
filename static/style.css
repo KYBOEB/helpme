@@ -1395,3 +1395,33 @@ button { font: inherit; color: inherit; }
   color: #9A9A9A;
   text-decoration: none;
 }
+
+/* Крестик переезжает в правый верхний угол самой панели: у края экрана
+   в него трудно попасть. Плюс панель закрывается кликом по подложке и Esc,
+   так что кнопка — запасной путь, а не единственный. */
+.edge-panel-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  left: auto;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #F1F1F1;
+  color: #5F5F5F;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.edge-panel-close:hover { background: #E4E4E4; }
+.edge-panel-close:focus-visible { outline: 2px solid var(--accent, #E31E24); outline-offset: 2px; }
+
+.edge-panel { position: relative; }
+.edge-panel:focus { outline: none; }
+
+.edge-backdrop { cursor: pointer; }
