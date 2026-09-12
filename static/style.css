@@ -237,17 +237,17 @@ button { font: inherit; color: inherit; }
   align-items: center;
   justify-content: center;
   width: fit-content;
-  /* Отступ снизу больше отступа сверху: логотип читается как отдельный
-     верхний элемент, а не как первая строчка общего столбца. */
-  margin: 0 auto 3.25rem;
-  padding: 1.35rem 2.25rem;
+  /* Логотип и подпись под ним — одна группа: отступ между ними маленький.
+     Расстояние до «Помоги мне» задаётся снизу от подписи, а не отсюда. */
+  margin: 0 auto 0.65rem;
+  padding: 1rem 1.5rem;
   border-radius: var(--radius);
   background: var(--accent-soft);
 }
 
 .logo-piece {
   display: block;
-  height: 2.6rem;
+  height: 1.7rem;
   width: auto;
 }
 
@@ -1368,7 +1368,8 @@ button { font: inherit; color: inherit; }
 }
 
 .empty-kicker {
-  margin: 0 0 0.5rem;
+  /* Сверху вплотную к логотипу, снизу — воздух до названия продукта. */
+  margin: 0 0 2.5rem;
   font-size: 0.8125rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1442,11 +1443,11 @@ button { font: inherit; color: inherit; }
    категорий уезжают за нижний край. */
 @media (max-height: 720px) {
   .empty { padding-top: 1.5rem; }
-  .hero-logo { margin-bottom: 2rem; padding: 1rem 1.75rem; }
-  .logo-piece { height: 2.1rem; }
+  .empty-kicker { margin-bottom: 1.6rem; }
 }
 
 @media (max-width: 560px) {
-  .hero-logo { margin-bottom: 2rem; padding: 0.9rem 1.35rem; }
-  .logo-piece { height: 1.9rem; }
+  .hero-logo { padding: 0.85rem 1.25rem; }
+  .logo-piece { height: 1.5rem; }
+  .empty-kicker { margin-bottom: 1.75rem; }
 }
