@@ -1404,32 +1404,60 @@ button { font: inherit; color: inherit; }
   text-decoration: none;
 }
 
-/* Крестик переезжает в правый верхний угол самой панели: у края экрана
-   в него трудно попасть. Плюс панель закрывается кликом по подложке и Esc,
-   так что кнопка — запасной путь, а не единственный. */
-.edge-panel-close {
-  /* Кнопка — обычный элемент потока, прижатый вправо и «липкий» к верху.
-     Абсолютное позиционирование не годилось: панель прокручивается
-     (overflow-y: auto), и кнопка уезжала вместе со списком обращений.
-     Sticky удерживает её на виду при любой прокрутке. */
+/* Шапка панели: заголовок слева, круглый крестик справа — одна строка.
+   Раньше крестик был отдельным элементом колоночного флекса НАД заголовком,
+   и получался серый овал: в колонке главная ось — вертикальная, поэтому
+   height: 2.25rem сжимался (flex-shrink по умолчанию 1), а ширина
+   оставалась прежней. Отсюда и «овал вместо кружка», и крестик, стоящий
+   выше надписи. Теперь это флекс-строка, а кнопке явно запрещено сжиматься. */
+.edge-panel-head {
+  /* Прилипает к верху при прокрутке списка обращений: панель скроллится
+     (overflow-y: auto), и без sticky заголовок с крестиком уезжают. */
   position: sticky;
-  align-self: flex-end;
-  transform: none;
   top: 0;
-  right: auto;
-  bottom: auto;
-  left: auto;
-  z-index: 2;
-  margin: 0 0 0.25rem;
-  width: 2.25rem;
-  height: 2.25rem;
-  display: grid;
-  place-items: center;
+  z-index: 3;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  /* Верхний отступ панели перенесён СЮДА (см. .edge-panel { padding-top: 0 }
+     ниже). Так и должно быть: «липкий» элемент нельзя поднять выше
+     содержимого его контейнера, поэтому при padding-top у самой панели
+     над шапкой оставалась полоска в 1.25rem, сквозь которую при прокрутке
+     просвечивал список. Боковые поля отрицательные — чтобы фон шапки
+     доставал до краёв панели. */
+  margin: 0 -1.125rem 1rem;
+  padding: 1.25rem 1.125rem 0.75rem;
+  background: var(--card);
+}
+
+/* Отступ сверху теперь у .edge-panel-head, иначе «липкая» шапка не может
+   встать вплотную к верхнему краю панели. */
+.edge-panel { padding-top: 0; }
+
+.edge-panel-head .edge-panel-title { margin: 0; }
+
+.edge-panel-close {
+  position: static;
+  transform: none;
+  /* flex: none — кнопка не сжимается и не растягивается; вместе с
+     aspect-ratio это гарантирует круг, а не овал, при любой длине
+     заголовка и любом масштабе шрифта. */
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  aspect-ratio: 1 / 1;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 50%;
   background: #F1F1F1;
   color: #5F5F5F;
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -1447,13 +1475,6 @@ button { font: inherit; color: inherit; }
    категорий уезжают за нижний край. */
 @media (max-height: 720px) {
   .empty { padding-top: 1.5rem; }
-  .empty-kicker { margin-bottom: 1.6rem; }
-}
-
-@media (max-width: 560px) {
-  .hero-logo { padding: 0.85rem 1.25rem; }
-  .logo-piece { height: 1.5rem; }
-  .empty-kicker { margin-bottom: 1.75rem; }
 }
 
 /* ==========================================================================
@@ -1464,12 +1485,14 @@ button { font: inherit; color: inherit; }
    ========================================================================== */
 
 /* Правила .edge-panel--left/--right выше по файлу специфичнее одиночного
-   селектора, поэтому их left/right перебиваем явно — иначе кнопка
-   возвращается к краю панели и налезает на заголовок. */
+   селектора, поэтому их position/left/right перебиваем явно — иначе кнопка
+   снова становится absolute и уезжает к краю панели. */
 .edge-panel--left .edge-panel-close,
 .edge-panel--right .edge-panel-close {
+  position: static;
   left: auto;
   right: auto;
+  top: auto;
   border-radius: 50%;
 }
 
@@ -1536,4 +1559,49 @@ button { font: inherit; color: inherit; }
   .resume-text { font-size: 0.9375rem; margin-bottom: 0.5rem; }
   .resume-actions { display: flex; gap: 0.5rem; }
   .resume-actions .btn { flex: 1; min-height: 2.5rem; padding: 0.4rem 0.75rem; }
+}
+
+/* ==========================================================================
+   ГЛАВНЫЙ ЭКРАН: имя продукта — первым, логотип заказчика — в шапке
+
+   Было: плашка «Актион» в центре над словами «Помоги мне». Читалось так,
+   будто сайт называется «Актион», а «Помоги мне» — подпись к нему. Плюс
+   центр экрана был перегружен: плашка + три текста подряд.
+
+   Стало: логотип «Актион» — слева в шапке (знак принадлежности, как у
+   любого корпоративного продукта), центр отдан продукту: «Помоги мне»
+   крупно, под ним одной строкой — что это и чьё.
+   ========================================================================== */
+
+.header-logo {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.header-logo .logo-piece { height: 1.1rem; }
+
+/* Шапка на главной: логотип слева, справа ничего — название продукта
+   там скрыто (см. .app[data-screen="home"] .header-brand), чтобы
+   «Помоги мне» не читалось на экране дважды. В диалоге название
+   возвращается, и логотип соседствует с ним — это нормально. */
+
+.empty-title { margin: 0 0 0.4rem; }
+
+.empty-kicker {
+  /* Подпись стоит вплотную под названием: это одна группа «имя + что это». */
+  margin: 0 0 0.35rem;
+}
+
+.empty-text { margin: 0 auto 2.25rem; }
+
+/* Логотип ушёл из героя, и сверху освободилось место. Блок опускаем ниже,
+   чтобы он читался как центр экрана. Именно padding, а не align-items:
+   center — при центрировании внутри прокручиваемой области верх блока
+   обрезается на низких экранах, это уже проходили. */
+.empty { padding-top: 12vh; }
+
+@media (max-width: 560px) {
+  .header-logo .logo-piece { height: 1rem; }
+  .empty { padding-top: 6vh; }
 }

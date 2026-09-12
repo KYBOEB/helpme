@@ -9,9 +9,9 @@
        "app.js" браузер запросил бы как /app.js и получил бы 404 — чат не
        загрузился бы вовсе. Версия обязательна: без неё браузер отдаёт старый
        файл из кэша, и это выглядит как «всё сломалось». -->
-  <link rel="stylesheet" href="/static/style.css?v=12">
+  <link rel="stylesheet" href="/static/style.css?v=13">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="/static/app.js?v=12" defer></script>
+  <script src="/static/app.js?v=13" defer></script>
 </head>
 <body>
   <div class="app" data-screen="home">
@@ -27,6 +27,16 @@
          знаний» — теперь отдельные краевые вкладки внизу файла, не в шапке. -->
     <header class="header">
       <div class="header-inner">
+        <!-- Знак компании-заказчика. Раньше плашка с логотипом стояла в центре
+             главного экрана НАД названием продукта — то есть компания читалась
+             как название сайта, а продукт как подпись к ней. Логотип заказчика
+             принадлежит шапке слева; центр экрана остаётся продукту. Части
+             логотипа те же самые (анимация уголков сохранена). -->
+        <div class="header-logo" role="img" aria-label="Актион">
+          <img class="logo-piece logo-piece--left" src="/static/img/logo-left.png" alt="" aria-hidden="true">
+          <img class="logo-piece logo-piece--mid" src="/static/img/logo-mid.png" alt="" aria-hidden="true">
+          <img class="logo-piece logo-piece--right" src="/static/img/logo-right.png" alt="" aria-hidden="true">
+        </div>
         <button id="back-btn" class="back-btn" type="button" hidden>
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m15 18-6-6 6-6"/>
@@ -68,25 +78,14 @@
       <!-- Главный экран: логотип, приветствие, поле ввода, каталог категорий -->
       <section id="empty" class="empty">
         <div class="empty-inner">
-          <!-- Плашка с логотипом компании — собрана из трёх файлов
-               (static/img/logo-left.png / logo-mid.png / logo-right.png),
-               порезанных из оригинального aktion-logo.png ровно по шву
-               между «уголками» и словом: так уголки можно анимировать
-               отдельно от текста, не накладывая поверх лишних символов.
-               В покое все три стоят вплотную и выглядят одним логотипом. -->
-          <div class="hero-logo" role="img" aria-label="Актион">
-            <img class="logo-piece logo-piece--left" src="/static/img/logo-left.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--mid" src="/static/img/logo-mid.png" alt="" aria-hidden="true">
-            <img class="logo-piece logo-piece--right" src="/static/img/logo-right.png" alt="" aria-hidden="true">
-          </div>
-          <!-- Вариант «имя продукта в герое»: на главном экране название стоит
-               один раз и крупно, под логотипом. В шапке на главной оно скрыто
-               (см. .app[data-screen="home"] .header-brand), а в диалоге
-               возвращается. Раньше на экране соседствовали четыре текста:
-               заголовок и подзаголовок в шапке плюс приветствие и пояснение
-               в герое — глазу не за что зацепиться. -->
-          <p class="empty-kicker">Виртуальный помощник техподдержки</p>
+          <!-- Порядок: сначала имя продукта, под ним — что это такое.
+               Логотип «Актион» переехал в шапку слева (см. .header-logo):
+               логотип компании-заказчика — это знак принадлежности, а не
+               заголовок страницы. В шапке название продукта на главной
+               скрыто (.app[data-screen="home"] .header-brand), чтобы
+               «Помоги мне» не читалось дважды. -->
           <h1 class="empty-title">Помоги мне</h1>
+          <p class="empty-kicker">Виртуальный помощник техподдержки</p>
           <p class="empty-text">Опишите проблему своими словами</p>
 
           <!-- Сюда встаёт поле ввода на главном экране. В диалоге app.js переносит его вниз, в #dock -->
@@ -172,14 +171,21 @@
     <div class="edge-backdrop" id="edge-backdrop" aria-hidden="true"></div>
 
     <aside class="edge-panel edge-panel--left" id="panel-history" aria-label="История обращений" tabindex="-1">
-      <button class="edge-panel-close" id="panel-history-close" type="button" aria-label="Закрыть">×</button>
-      <h3 class="edge-panel-title">История обращений</h3>
+      <!-- Заголовок и крестик — одна строка (.edge-panel-head). Порядок в
+           разметке: сначала заголовок, потом кнопка — так и по вёрстке,
+           и по порядку обхода с клавиатуры. -->
+      <div class="edge-panel-head">
+        <h3 class="edge-panel-title">История обращений</h3>
+        <button class="edge-panel-close" id="panel-history-close" type="button" aria-label="Закрыть">×</button>
+      </div>
       <div id="panel-history-body"></div>
     </aside>
 
     <aside class="edge-panel edge-panel--right" id="panel-search" aria-label="Поиск по базе знаний" tabindex="-1">
-      <button class="edge-panel-close" id="panel-search-close" type="button" aria-label="Закрыть">×</button>
-      <h3 class="edge-panel-title">Поиск по базе знаний</h3>
+      <div class="edge-panel-head">
+        <h3 class="edge-panel-title">Поиск по базе знаний</h3>
+        <button class="edge-panel-close" id="panel-search-close" type="button" aria-label="Закрыть">×</button>
+      </div>
       <label for="kb-search-input" class="visually-hidden">Поиск по базе знаний</label>
       <div class="kb-search-box">
         <span class="kb-search-icon" aria-hidden="true">🔎</span>
