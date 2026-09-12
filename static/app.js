@@ -466,64 +466,84 @@ function renderSteps(data) {
 
 function buildStepsCard(steps, source) {
   const total = steps.length;
+  let current = 0;
+
+  // Последовательный гид, а не список с галочками.
+  //
+  // Галочки давали пользователю тыкать шаги вразнобой: порядок в инструкции
+  // не случайный — сверху то, что помогает чаще и делается проще. При этом
+  // все шаги остаются на экране: видно, сколько их всего и что будет дальше,
+  // и можно прочитать всё сразу и сразу нажать «Проблема решена» — комиссия
+  // отдельно ругала интерфейсы, где до результата надо нажать N кнопок.
+  //
+  // Переход к следующему шагу происходит в браузере, без запроса к серверу.
   const card = el("div", "step-card");
   card.dataset.active = "steps";
   card.tabIndex = -1;
 
   const head = el("div", "step-head");
-  head.append(el("span", "step-counter", `Инструкция: ${total} ${pluralSteps(total)}`));
+  const counter = el("span", "step-counter", `Шаг 1 из ${total}`);
+  head.append(counter);
 
   const progress = el("div", "progress");
   progress.setAttribute("role", "progressbar");
   progress.setAttribute("aria-valuemin", "0");
   progress.setAttribute("aria-valuemax", String(total));
-  progress.setAttribute("aria-valuenow", "0");
-  progress.setAttribute("aria-label", "Отмечено шагов");
+  progress.setAttribute("aria-valuenow", "1");
+  progress.setAttribute("aria-label", "Текущий шаг");
   const fill = el("div", "progress-fill");
   progress.append(fill);
 
   const list = el("ol", "step-list");
-  steps.forEach((text) => {
+  const items = steps.map((text, i) => {
     const li = el("li", "step-item");
-    const label = el("label", "step-item-label");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "step-check";
-    checkbox.addEventListener("change", () => updateStepsProgress(list, progress, fill, total));
-    const span = el("span", "step-item-text", text);
-    label.append(checkbox, span);
-    li.append(label);
+    li.append(el("span", "step-num", String(i + 1)),
+              el("span", "step-item-text", text));
     list.append(li);
+    return li;
   });
 
   const actions = el("div", "step-actions");
   const okBtn = el("button", "btn btn--primary", "Проблема решена");
-  const failBtn = el("button", "btn btn--ghost", "Не помогло");
-  okBtn.type = failBtn.type = "button";
-  okBtn.addEventListener("click", () => finishSteps(card, true, source));
-  failBtn.addEventListener("click", () => finishSteps(card, false, source));
-  actions.append(okBtn, failBtn);
+  const nextBtn = el("button", "btn btn--ghost", "Следующий шаг");
+  okBtn.type = nextBtn.type = "button";
+  actions.append(okBtn, nextBtn);
 
+  function paint() {
+    items.forEach((li, i) => {
+      li.classList.toggle("is-done", i < current);
+      li.classList.toggle("is-current", i === current);
+      li.classList.toggle("is-later", i > current);
+    });
+    counter.textContent = `Шаг ${current + 1} из ${total}`;
+    progress.setAttribute("aria-valuenow", String(current + 1));
+    fill.style.width = `${((current + 1) / total) * 100}%`;
+    // На последнем шаге предлагать «следующий» нечего — честно спрашиваем,
+    // помогло ли вообще.
+    nextBtn.textContent = current < total - 1 ? "Следующий шаг" : "Ничего не помогло";
+    card.dataset.done = String(current + 1);
+  }
+
+  okBtn.addEventListener("click", () => finishSteps(card, true, source, total));
+  nextBtn.addEventListener("click", () => {
+    if (current < total - 1) {
+      current += 1;
+      paint();
+      return;
+    }
+    finishSteps(card, false, source, total);
+  });
+
+  paint();
   card.append(head, progress, list, actions);
   focusIfLost(card);
   return card;
 }
 
-// Чекбоксы ни на что не влияют, кроме прогресс-бара — это просто отметки
-// «где я в списке», а не подтверждение шага (см. F2 в ТЗ).
-function updateStepsProgress(list, progress, fill, total) {
-  const checked = list.querySelectorAll(".step-check:checked").length;
-  progress.setAttribute("aria-valuenow", String(checked));
-  fill.style.width = `${(checked / total) * 100}%`;
-}
-
-// «Проблема решена» — одно сообщение на сервер. «Не помогло» — тоже одно,
-// с предупреждением про передачу ИИ-ассистенту, если источник был kb.
-function finishSteps(card, solved, source) {
+function finishSteps(card, solved, source, total) {
   if (state.busy || card.dataset.active !== "steps") return; // двойное нажатие
-  const checked = card.querySelectorAll(".step-check:checked").length;
-  const total = card.querySelectorAll(".step-check").length;
-  collapseStepsCard(card, solved ? "ok" : "failed", checked, total);
+  const done = Number(card.dataset.done || 1);
+  collapseStepsCard(card, solved ? "ok" : "failed", done, total || done);
 
   if (solved) return send({ quickReply: QR.SOLVED });
 
@@ -537,7 +557,6 @@ function finishSteps(card, solved, source) {
   send({ quickReply: QR.NOT_SOLVED });
 }
 
-// Сворачиваем инструкцию: остаётся в ленте приглушённой строкой с итогом.
 function collapseStepsCard(card, result, checked, total) {
   delete card.dataset.active;
   card.className = `step-card is-collapsed is-${result}`;
@@ -546,8 +565,8 @@ function collapseStepsCard(card, result, checked, total) {
   const marks = { ok: "✓", failed: "✕", skipped: "–" };
   const texts = {
     ok: "Проблема решена",
-    failed: `Не помогло (отмечено ${checked} из ${total})`,
-    skipped: `Пропущено (отмечено ${checked} из ${total})`,
+    failed: `Не помогло (прошли ${checked} из ${total})`,
+    skipped: `Пропущено (прошли ${checked} из ${total})`,
   };
 
   const mark = el("span", "step-mark", marks[result]);
@@ -1134,9 +1153,9 @@ function hideTyping() {
 function retireActiveControls() {
   feedEl.querySelectorAll("[data-active]").forEach((node) => {
     if (node.dataset.active === "steps") {
-      const checked = node.querySelectorAll(".step-check:checked").length;
-      const total = node.querySelectorAll(".step-check").length;
-      collapseStepsCard(node, "skipped", checked, total);
+      const done = Number(node.dataset.done || 1);
+      const total = node.querySelectorAll(".step-item").length;
+      collapseStepsCard(node, "skipped", done, total);
     } else {
       node.remove();
     }
@@ -1181,6 +1200,10 @@ function setMode(mode, { push = true } = {}) {
 
   const home = mode === "home";
   const chatMode = mode === "chat";
+
+  // Экран проставляем на .app: по нему CSS прячет название в шапке
+  // на главной, где оно уже есть в герое.
+  document.querySelector(".app")?.setAttribute("data-screen", mode);
 
   emptyEl.hidden = !home;
   feedEl.hidden = !chatMode;

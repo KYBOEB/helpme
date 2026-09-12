@@ -847,14 +847,7 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
 }
 
-.step-check {
-  flex: none;
-  width: 1.25rem;
-  height: 1.25rem;
-  margin-top: 0.1875rem;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
+
 
 .step-item-text {
   font-size: 1rem;
@@ -862,10 +855,7 @@ button { font: inherit; color: inherit; }
   overflow-wrap: anywhere;
 }
 
-.step-check:checked ~ .step-item-text {
-  color: var(--text-muted);
-  text-decoration: line-through;
-}
+
 
 .step-actions {
   display: flex;
@@ -1298,4 +1288,86 @@ button { font: inherit; color: inherit; }
 
 .past-thread .bubble {
   background: #F4F4F4;
+}
+
+
+/* ==========================================================================
+   ПОСЛЕДОВАТЕЛЬНЫЙ ГИД ПО ШАГАМ
+   Все шаги на экране, но выделен текущий: порядок в инструкции не случайный —
+   сверху то, что помогает чаще и делается проще.
+   ========================================================================== */
+
+.step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.5rem 0.15rem;
+  transition: opacity 0.15s ease;
+}
+
+.step-num {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: #ECECEC;
+  color: #8A8A8A;
+}
+
+.step-item-text { line-height: 1.45; }
+
+.step-item.is-current .step-num {
+  background: var(--accent, #E31E24);
+  color: #FFFFFF;
+}
+
+.step-item.is-current .step-item-text {
+  font-weight: 500;
+  color: #1A1A1A;
+}
+
+.step-item.is-done .step-num::after { content: "✓"; }
+.step-item.is-done .step-num { color: transparent; background: #D6EBD9; }
+.step-item.is-done .step-num::after { color: #2E7D32; }
+.step-item.is-done .step-item-text { color: #8A8A8A; }
+
+.step-item.is-later { opacity: 0.55; }
+
+/* Переписка прошлого обращения: приглушённая, но ЧИТАЕМАЯ.
+   Раньше здесь стояла общая прозрачность и подмена фона — реплики
+   пользователя оставались белым по светло-серому и не читались вовсе. */
+.past-thread { opacity: 1; }
+
+.past-thread .bubble {
+  background: #F1F1F1;
+  color: #6E6E6E;
+  border-color: #E6E6E6;
+}
+
+.past-thread .msg--user .bubble {
+  background: #EBEBEB;
+  color: #5F5F5F;
+}
+
+.past-thread .avatar { opacity: 0.55; }
+
+/* Заголовок на главном экране: имя продукта крупно, под ним — область.
+   В шапке на главной название скрыто, чтобы не дублировать его дважды. */
+.app[data-screen="home"] .header-brand { visibility: hidden; }
+
+.empty-title {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  letter-spacing: -0.02em;
+}
+
+.empty-kicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9A9A9A;
 }
