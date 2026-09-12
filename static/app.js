@@ -142,7 +142,13 @@ function init() {
 
   // F1: плитки категорий — только подставляют пример в поле, не отправляют
   document.querySelectorAll(".catalog-tile").forEach((btn) => {
-    btn.addEventListener("click", () => fillInput(btn.dataset.fill));
+    // Нажатие на плитку сразу отправляет вопрос: одно действие вместо двух.
+    // Кейс требует «минимального количества действий», а подстановка в поле
+    // заставляла пользователя ещё раз нажимать «отправить».
+    btn.addEventListener("click", () => {
+      const text = btn.dataset.fill;
+      if (text) send({ message: text }, { echo: text });
+    });
   });
   initKbSearch();
   loadKbCount();
@@ -396,7 +402,9 @@ function renderQuestion(data) {
   const msg = addBotMessage(reply.text);
   const general = isGeneral(data);
   if (general) markGeneral(msg);
-  maybeRenderClassificationLine(msg.body, data);
+  // Строку «Категория · Инструкция · Уверенность» здесь НЕ показываем.
+  // Под уточняющим вопросом она сбивает с толку: ответа ещё нет, а система
+  // уже отчитывается об уверенности. Строка остаётся только над инструкцией.
   renderQuickReplies(msg.body, reply.quick_replies);
   appendRatingIfKnown(msg.body, data, { onlyIf: general });
   scrollToMessage(msg.row);
@@ -408,7 +416,6 @@ function renderChoice(data) {
   const { reply } = data;
   const msg = addBotMessage(reply.text || "Уточните, пожалуйста, о чём речь:");
   if (isGeneral(data)) markGeneral(msg);
-  maybeRenderClassificationLine(msg.body, data);
   renderQuickReplies(msg.body, reply.quick_replies);
   scrollToMessage(msg.row);
 }
@@ -652,40 +659,22 @@ function cardOutcome(data) {
 function renderTicketCard(card) {
   if (!card || !card.ticket_id) return null;
 
+  // Компактная карточка: номер обращения и формулировка проблемы.
+  //
+  // Список «что уже попробовали» и собранные сведения отсюда убраны
+  // намеренно: шаги пользователь только что прошёл, они на экране выше,
+  // а повтор превращает итог в простыню. Полная карточка со слотами,
+  // исходом и датой остаётся там, где она действительно нужна, —
+  // в панели оператора, выгрузке и вебхуке.
   const box = el("div", "ticket-card");
 
   const head = el("div", "ticket-card-head");
   head.append(el("span", "ticket-card-no", `Обращение №${card.public_no ?? "—"}`));
-  if (card.category) head.append(el("span", "ticket-card-category", card.category));
   box.append(head);
 
   if (card.problem_summary) {
     box.append(el("p", "ticket-card-summary", card.problem_summary));
   }
-
-  if (Array.isArray(card.steps_done) && card.steps_done.length) {
-    const wrap = el("div", "ticket-card-block");
-    wrap.append(el("p", "ticket-card-block-title", "Что уже попробовали"));
-    const list = el("ul", "ticket-card-list");
-    card.steps_done.forEach((s) => list.append(el("li", null, stepText(s))));
-    wrap.append(list);
-    box.append(wrap);
-  }
-
-  const slots = card.slots && typeof card.slots === "object" ? Object.entries(card.slots) : [];
-  if (slots.length) {
-    const wrap = el("div", "ticket-card-block");
-    wrap.append(el("p", "ticket-card-block-title", "Собранные сведения"));
-    const list = el("ul", "ticket-card-list");
-    slots.forEach(([key, value]) => list.append(el("li", null, `${key}: ${value}`)));
-    wrap.append(list);
-    box.append(wrap);
-  }
-
-  const footer = el("div", "ticket-card-footer");
-  footer.append(el("span", null, ticketOutcomeLabel(card)));
-  if (card.created_at) footer.append(el("span", null, formatDate(card.created_at)));
-  box.append(footer);
 
   return box;
 }
@@ -1541,7 +1530,7 @@ function renderHistoryDetailActions(container, ticket) {
 // «Проблема вернулась»: новое обращение, привязанное к старому. Старое
 // остаётся закрытым — используем ЕГО ticket_id/token как parent_*, но
 // у себя заводим совершенно новый ticketId (он придёт в следующем ответе).
-function returnToProblem(ticket) {
+async function returnToProblem(ticket) {
   state.conv++;
   stopPolling();
   state.ticketId = null;
@@ -1557,8 +1546,44 @@ function returnToProblem(ticket) {
   setMode("chat");
   state.pendingParent = { ticketId: ticket.ticket_id, token: ticket.token };
 
-  const msg = addBotMessage("Прошлое обращение закрыто. Опишите, что снова не работает — "
-    + "я перенесу контекст из прошлого обращения.");
+  // Переписку прошлого обращения показываем прямо в чате.
+  //
+  // Без неё возврат не выглядел возвратом: пользователь нажимал «Проблема
+  // вернулась» и попадал в пустой чат, где ничего не напоминало о прошлом
+  // обращении. Старые реплики идут сверху, приглушённые, под заголовком
+  // с номером — а ниже начинается новое обращение.
+  //
+  // Обращение при этом создаётся НОВОЕ: старое остаётся закрытым, его
+  // ticket_id и token уходят на сервер как parent_* и нужны только для
+  // переноса контекста.
+  const conv = state.conv;
+  try {
+    const past = await apiPost("/api/chat/updates", {
+      ticket_id: ticket.ticket_id, token: ticket.token, after: 0, full: true,
+    });
+    if (conv !== state.conv) return;           // пользователь уже ушёл отсюда
+    const messages = past.messages || [];
+    if (messages.length) {
+      const no = typeof past.public_no === "number" ? past.public_no : ticket.public_no;
+      feedEl.append(el("div", "past-divider",
+                       no ? `Прошлое обращение №${no}` : "Прошлое обращение"));
+      const wrap = el("div", "past-thread");
+      for (const m of messages) {
+        if (m.role === "user") wrap.append(buildUserMessage(m.text).row);
+        else if (m.role === "operator") wrap.append(buildOperatorMessage(m.text).row);
+        else wrap.append(buildBotMessage(m.text).row);
+      }
+      feedEl.append(wrap);
+      feedEl.append(el("div", "past-divider", "Новое обращение"));
+    }
+  } catch {
+    // Не смогли подтянуть прошлое — не беда, создание нового обращения
+    // от этого не зависит.
+  }
+  if (conv !== state.conv) return;
+
+  const msg = addBotMessage("Опишите, что снова не работает — контекст прошлого "
+    + "обращения я перенесу, повторять всё заново не нужно.");
   scrollToMessage(msg.row);
   inputEl.focus();
 }

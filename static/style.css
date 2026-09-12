@@ -1266,3 +1266,36 @@ button { font: inherit; color: inherit; }
     animation: none !important;
   }
 }
+
+/* ==========================================================================
+   ВОЗВРАТ К ПРОШЛОМУ ОБРАЩЕНИЮ
+   Переписка закрытого обращения показывается над новым диалогом: приглушённо
+   и под заголовком, чтобы её нельзя было спутать с текущей перепиской.
+   ========================================================================== */
+
+.past-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.8125rem;
+  color: #8A8A8A;
+  white-space: nowrap;
+}
+
+.past-divider::before,
+.past-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #E3E3E3;
+}
+
+.past-thread {
+  opacity: 0.62;
+  padding-bottom: 0.25rem;
+}
+
+.past-thread .bubble {
+  background: #F4F4F4;
+}
