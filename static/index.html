@@ -9,9 +9,9 @@
        "app.js" браузер запросил бы как /app.js и получил бы 404 — чат не
        загрузился бы вовсе. Версия обязательна: без неё браузер отдаёт старый
        файл из кэша, и это выглядит как «всё сломалось». -->
-  <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=12">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="/static/app.js?v=11" defer></script>
+  <script src="/static/app.js?v=12" defer></script>
 </head>
 <body>
   <div class="app" data-screen="home">
@@ -87,8 +87,7 @@
                в герое — глазу не за что зацепиться. -->
           <p class="empty-kicker">Виртуальный помощник техподдержки</p>
           <h1 class="empty-title">Помоги мне</h1>
-          <p class="empty-text">Опишите проблему своими словами — подберём решение
-            из базы знаний, а если не поможет, передадим специалисту.</p>
+          <p class="empty-text">Опишите проблему своими словами</p>
 
           <!-- Сюда встаёт поле ввода на главном экране. В диалоге app.js переносит его вниз, в #dock -->
           <div id="hero-slot" class="hero-slot">

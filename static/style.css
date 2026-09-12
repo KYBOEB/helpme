@@ -1408,15 +1408,19 @@ button { font: inherit; color: inherit; }
    в него трудно попасть. Плюс панель закрывается кликом по подложке и Esc,
    так что кнопка — запасной путь, а не единственный. */
 .edge-panel-close {
-  position: absolute;
-  /* transform сбрасываем: в исходном правиле кнопка висела сбоку панели
-     и центрировалась через translateY(-50%). Без сброса она уезжала вверх
-     на половину своей высоты. */
+  /* Кнопка — обычный элемент потока, прижатый вправо и «липкий» к верху.
+     Абсолютное позиционирование не годилось: панель прокручивается
+     (overflow-y: auto), и кнопка уезжала вместе со списком обращений.
+     Sticky удерживает её на виду при любой прокрутке. */
+  position: sticky;
+  align-self: flex-end;
   transform: none;
-  top: 0.75rem;
-  right: 0.75rem;
+  top: 0;
+  right: auto;
   bottom: auto;
   left: auto;
+  z-index: 2;
+  margin: 0 0 0.25rem;
   width: 2.25rem;
   height: 2.25rem;
   display: grid;
@@ -1459,16 +1463,15 @@ button { font: inherit; color: inherit; }
    иначе кнопка возвращается к левому краю и налезает на заголовок панели.
    ========================================================================== */
 
+/* Правила .edge-panel--left/--right выше по файлу специфичнее одиночного
+   селектора, поэтому их left/right перебиваем явно — иначе кнопка
+   возвращается к краю панели и налезает на заголовок. */
 .edge-panel--left .edge-panel-close,
 .edge-panel--right .edge-panel-close {
   left: auto;
-  right: 0.75rem;
+  right: auto;
   border-radius: 50%;
 }
-
-/* Заголовку панели оставляем место под кнопку, чтобы длинный текст
-   не подлезал под неё. */
-.edge-panel > :first-child { padding-right: 2.75rem; }
 
 .edge-tab-short { display: none; }
 
@@ -1522,6 +1525,11 @@ button { font: inherit; color: inherit; }
   /* Сдвигать фон на телефоне незачем: панель закрывает экран целиком. */
   .page-shell.is-shifted-right,
   .page-shell.is-shifted-left { transform: none; }
+
+  /* В диалоге нижние кнопки прячем: они перекрывают переписку и мешают
+     читать. На главном экране остаются — там они и нужны. */
+  .app[data-screen="chat"] .edge-tab { display: none; }
+  .app[data-screen="chat"] .dock { padding-bottom: env(safe-area-inset-bottom); }
 
   /* Полоса «незавершённое обращение» съедала треть экрана. */
   .resume { padding: 0.75rem 0.875rem; }

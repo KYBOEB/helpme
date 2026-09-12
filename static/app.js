@@ -385,16 +385,15 @@ function maybeRenderClassificationLine(body, data) {
   const line = el("p", "classify-line");
   const parts = [`Категория: ${data.category}`];
   if (data.article?.title) parts.push(`Инструкция: «${data.article.title}»`);
-  parts.push(`Уверенность: ${percent}`);
-  line.append(document.createTextNode(parts.join(" · ") + " "));
-
-  const hint = el("span", "classify-hint", "?");
-  hint.tabIndex = 0;
-  hint.setAttribute("role", "note");
-  const hintText = "Уверенность относится к подбору инструкции из базы знаний, а не к ответу целиком";
-  hint.title = hintText;
-  hint.setAttribute("aria-label", hintText);
-  line.append(hint);
+  // «Уверенность в подборе», а не просто «Уверенность» и не «в ответе».
+  //
+  // Значение относится к тому, насколько система уверена, что подобрала
+  // ПРАВИЛЬНУЮ инструкцию из базы знаний. Писать «уверенность в ответе»
+  // нельзя — это было бы неправдой: содержание ответа берётся из карточки,
+  // и система его не оценивает. Уточнённая формулировка объясняет себя сама,
+  // поэтому знак вопроса с подсказкой убран — он только сбивал с толку.
+  parts.push(`Уверенность в подборе: ${percent}`);
+  line.textContent = parts.join(" · ");
 
   body.append(line);
 }
