@@ -124,10 +124,57 @@ def _card(db: Session, ticket: Ticket) -> TicketCard:
     )
 
 
+# Маркер, по которому шаги отделяются от текста реплики при чтении переписки.
+# Отдельной колонки в таблице сообщений нет, и заводить её ради этого не стоит:
+# запись остаётся обычным текстом, читаемым и в панели специалиста, и в выгрузке.
+STEPS_MARK = "Предложенные шаги:"
+
+
+def _stored_text(reply: Reply) -> str:
+    """Текст реплики для записи в переписку — вместе с выданными шагами.
+
+    Раньше в переписку уходил только reply.text, а шаги жили в
+    ticket.steps_json, который ПЕРЕЗАПИСЫВАЕТСЯ при каждой новой выдаче.
+    Последствий было три:
+
+      * при возврате к обращению из истории пользователь видел «Давайте по
+        шагам» и пустое место вместо самих шагов;
+      * реплика общей рекомендации (у неё text пустой) выглядела как пустой
+        пузырь без текста — на экране оставался один аватар;
+      * специалист, открыв обращение, не видел, что именно бот уже советовал,
+        и мог предложить то же самое ещё раз.
+
+    Теперь шаги — часть записи сообщения. Порядок и привязка «какие шаги к
+    какой реплике» сохраняются сами собой.
+    """
+    if not reply.steps:
+        return reply.text
+    head = reply.text or (
+        "В базе знаний точного решения не нашлось — предложил общие действия."
+        if reply.source == "general"
+        else "Предложил шаги из базы знаний.")
+    listing = "\n".join(f"{i}. {s}" for i, s in enumerate(reply.steps, 1))
+    return f"{head}\n\n{STEPS_MARK}\n{listing}"
+
+
+def split_steps(content: str) -> tuple[str, list[str]]:
+    """Обратная операция к _stored_text: текст и список шагов по отдельности.
+
+    Если маркера нет (старые обращения, записанные до этой правки), вернём
+    текст как есть и пустой список — переписка просто отрисуется по-старому.
+    """
+    head, mark, tail = (content or "").partition("\n" + STEPS_MARK + "\n")
+    if not mark:
+        return content or "", []
+    steps = [line.split(". ", 1)[-1].strip()
+             for line in tail.splitlines() if line.strip()]
+    return head.strip(), [s for s in steps if s]
+
+
 def _respond(db: Session, ticket: Ticket, reply: Reply,
              with_card: bool = False) -> ChatResponse:
     art = _article(ticket)
-    repo.add_message(db, ticket.id, "assistant", reply.text)
+    repo.add_message(db, ticket.id, "assistant", _stored_text(reply))
     return ChatResponse(
         ticket_id=ticket.id,
         token=ticket.token,

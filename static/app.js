@@ -821,15 +821,20 @@ function callSpecialist() {
   send({ quickReply: QR_CALL_SPECIALIST });
 }
 
-// Номер обращения в шапке, справа от названия. Появляется в тот момент,
+// Номер обращения в шапке, рядом с названием. Появляется в тот момент,
 // когда обращение создано, и исчезает при возврате на главную.
+// Слово «Обращение» — в отдельном span: на телефоне его прячут CSS-правилом
+// (.header-ticket-word), а сам номер остаётся, как и на ПК.
 function setHeaderTicket(publicNo) {
   if (!headerTicketEl) return;
   if (typeof publicNo === "number" && publicNo > 0) {
-    headerTicketEl.textContent = `Обращение №${publicNo}`;
+    headerTicketEl.replaceChildren(
+      el("span", "header-ticket-word", "Обращение "),
+      document.createTextNode(`№${publicNo}`)
+    );
     headerTicketEl.hidden = false;
   } else {
-    headerTicketEl.textContent = "";
+    headerTicketEl.replaceChildren();
     headerTicketEl.hidden = true;
   }
 }

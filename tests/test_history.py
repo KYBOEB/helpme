@@ -98,6 +98,17 @@ client.post(f"/api/tickets/{first_id}/close", json={"token": r["token"]})
 upd = client.post("/api/chat/updates", json={
     "ticket_id": first_id, "token": r["token"], "after": 0, "full": True}).json()
 check("3.1 переписка закрытого обращения читается", len(upd.get("messages", [])) > 0)
+# Шаги должны приходить ВМЕСТЕ с репликой бота, а не только отдельным полем
+# ticket.steps_json: оно перезаписывается при каждой новой выдаче, и при
+# возврате к обращению пользователь видел «давайте по шагам» и пустое место.
+_bot = [m for m in upd.get("messages", []) if m["role"] == "assistant"]
+check("3.1.1 шаги приходят вместе с репликой бота",
+      any(m.get("steps") for m in _bot),
+      str([m.get("steps") for m in _bot])[:200])
+check("3.1.2 в переписке нет реплик бота без текста и без шагов",
+      all(m.get("text") or m.get("steps") for m in _bot),
+      str([m.get("text") for m in _bot])[:200])
+
 check("3.2 в переписке есть короткий номер", (upd.get("public_no") or 0) > 1000,
       f"public_no={upd.get('public_no')}")
 check("3.3 закрытое обращение не принимает сообщений",

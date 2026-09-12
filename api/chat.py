@@ -42,6 +42,14 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
 
 # Опрос делаем POST, а не GET: токен обращения — секрет, и в строке запроса он
 # осел бы в журналах прокси и в истории браузера. В теле запроса он не осядет.
+def _message_out(m: dict) -> dict:
+    """Одно сообщение для страницы чата: текст и, для реплик бота, шаги."""
+    text, steps = (dialog.split_steps(m["content"])
+                   if m["role"] == "assistant" else (m["content"], []))
+    return {"id": m["id"], "role": m["role"], "text": text,
+            "steps": steps, "created_at": m["created_at"]}
+
+
 @router.post("/chat/updates")
 def chat_updates(payload: dict = Body(...)) -> dict:
     """Новые реплики специалиста по обращению.
@@ -70,15 +78,27 @@ def chat_updates(payload: dict = Body(...)) -> dict:
         security.rate_limit(f"poll:{ticket_id}", max_requests=90)
 
         messages = repo.messages_after(db, ticket_id, after, roles=roles, limit=200)
-        # Выданные шаги в переписке не лежат — она хранит только текст реплик.
-        # Для восстановления диалога их надо отдать отдельно, иначе пользователь
-        # увидит вступление «давайте по шагам» и ни одного шага.
+        # Текущий набор шагов обращения — для живой карточки с кнопками,
+        # которую страница рисует при восстановлении незавершённого диалога.
+        # Шаги ПРОШЛЫХ реплик приходят вместе с самими сообщениями
+        # (см. _message_out и core/dialog._stored_text).
         steps: list = []
         if payload.get("full"):
             try:
                 steps = json.loads(ticket.steps_json or "[]")
             except ValueError:
                 steps = []
+        out = [_message_out(m) for m in messages]
+        # Обращения, созданные ДО правки с записью шагов в переписку, шагов
+        # в сообщениях не имеют. Чтобы старая демо-база не выглядела битой,
+        # приклеиваем известный набор к последней реплике бота: именно после
+        # неё шаги и показывались.
+        if payload.get("full") and steps and not any(m["steps"] for m in out):
+            for m in reversed(out):
+                if m["role"] == "assistant":
+                    m["steps"] = steps
+                    break
+
         return {
             "ticket_id": ticket_id,
             # Короткий номер: в интерфейсе показывается он. До этой правки
@@ -94,8 +114,10 @@ def chat_updates(payload: dict = Body(...)) -> dict:
             "operator_taken": bool(ticket.operator_taken),
             "steps": steps,
             "assist_used": bool(ticket.assist_used),
-            "messages": [{"id": m["id"], "role": m["role"], "text": m["content"],
-                          "created_at": m["created_at"]} for m in messages],
+            # Шаги отделяются от текста реплики: в переписке они хранятся
+            # одной записью (см. core/dialog._stored_text), а странице удобнее
+            # получить их списком — она рисует их отдельным блоком.
+            "messages": out,
             "last_id": messages[-1]["id"] if messages
                        else repo.last_message_id(db, ticket_id),
         }

@@ -104,7 +104,11 @@ button { font: inherit; color: inherit; }
   margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  /* Этот же gap идёт по обе стороны от .header-brand (он тут единственный
+     промежуток слева и единственный справа от центра — см. margin-left:auto
+     у .back-btn и justify-content на .header-actions ниже, которые прижимают
+     кнопки вплотную к этому зазору, а не к дальнему краю шапки). ~100px. */
+  gap: 6.25rem;
 }
 
 .header-brand {
@@ -170,12 +174,20 @@ button { font: inherit; color: inherit; }
   color: var(--accent);
 }
 
+/* Прижимает кнопку к правому краю .header-left (то есть вплотную к
+   ~100px зазору перед .header-brand), а не оставляет её сразу после
+   логотипа с пустым местом до центра. */
+.back-btn { margin-left: auto; }
+
 .header-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex: 1;
-  justify-content: flex-end;
+  /* flex-start, не flex-end: кнопка должна стоять вплотную к центру
+     (по ту сторону — тот самый ~100px gap контейнера), а не у дальнего
+     правого края шапки. */
+  justify-content: flex-start;
   min-width: 0;
 }
 
@@ -1408,8 +1420,10 @@ button { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
+/* На телефоне бейдж не прячем целиком — просто убираем слово «Обращение»,
+   номер остаётся рядом с «Помоги мне», как и на ПК, только компактнее. */
 @media (max-width: 560px) {
-  .header-ticket { display: none; }
+  .header-ticket-word { display: none; }
 }
 
 /* Пройденный шаг — крестик на сером: пользователь его сделал, и НЕ помогло.
