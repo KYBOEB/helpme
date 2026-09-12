@@ -5,24 +5,45 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Помоги мне — техподдержка</title>
   <!-- Никаких CDN: только локальные файлы -->
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <!-- Пути АБСОЛЮТНЫЕ. Страница отдаётся по адресу «/», поэтому относительный
+       "app.js" браузер запросил бы как /app.js и получил бы 404 — чат не
+       загрузился бы вовсе. Версия обязательна: без неё браузер отдаёт старый
+       файл из кэша, и это выглядит как «всё сломалось». -->
+  <link rel="stylesheet" href="/static/style.css?v=5">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="/static/app.js?v=4" defer></script>
+  <script src="/static/app.js?v=5" defer></script>
 </head>
 <body>
   <div class="app">
+    <!-- page-shell — обёртка над всем «обычным» содержимым сайта. При
+         открытии краевой панели именно её, а не .app, сдвигаем в сторону
+         (F2 из последней правки): подложка/вкладки/панели лежат СНАРУЖИ
+         этой обёртки, поэтому transform на ней их не задевает — они всё
+         так же position:fixed относительно окна, а не .page-shell. -->
+    <div class="page-shell" id="page-shell">
 
-    <!-- Шапка: название; в диалоге слева появляется кнопка «На главную» -->
+    <!-- Шапка: название; слева в диалоге появляется кнопка «на главную»,
+         справа — «Специалист» (F4). «История обращений» и «Поиск по базе
+         знаний» — теперь отдельные краевые вкладки внизу файла, не в шапке. -->
     <header class="header">
-      <button id="back-btn" class="back-btn" type="button" hidden>
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="m15 18-6-6 6-6"/>
-        </svg>
-        <span>На главную</span>
-      </button>
-      <div class="header-brand">
-        <h1 class="header-title">Помоги мне</h1>
-        <p class="header-subtitle">Виртуальный помощник техподдержки</p>
+      <div class="header-inner">
+        <button id="back-btn" class="back-btn" type="button" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m15 18-6-6 6-6"/>
+          </svg>
+          <span>На главную</span>
+        </button>
+        <div class="header-brand">
+          <h1 class="header-title">Помоги мне</h1>
+          <p class="header-subtitle">Виртуальный помощник техподдержки</p>
+        </div>
+        <div class="header-actions">
+          <!-- F4: видна всегда, пока обращение не закрыто -->
+          <button id="specialist-btn" class="header-btn" type="button" hidden>
+            <span aria-hidden="true">🧑‍💼</span>
+            <span class="header-btn-label">Специалист</span>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -36,20 +57,26 @@
       </div>
     </div>
 
-    <!-- Прокручиваемая область -->
+    <!-- Прокручиваемая область: главный экран или лента диалога — один
+         из двух за раз, переключает app.js. -->
     <main id="chat" class="chat">
 
-      <!-- Главный экран: логотип, приветствие, поле ввода по центру, частые проблемы -->
+      <!-- Главный экран: логотип, приветствие, поле ввода, каталог категорий -->
       <section id="empty" class="empty">
         <div class="empty-inner">
-          <!-- Плашка с логотипом компании.
-               ЛОГОТИП: файл кладётся в static/img/aktion-logo.png.
-               Если папка или имя файла другие — поменяйте src в строке ниже. -->
-          <div class="hero-logo">
-            <img src="/static/img/aktion-logo.png" alt="Актион" width="509" height="71">
+          <!-- Плашка с логотипом компании — собрана из трёх файлов
+               (static/img/logo-left.png / logo-mid.png / logo-right.png),
+               порезанных из оригинального aktion-logo.png ровно по шву
+               между «уголками» и словом: так уголки можно анимировать
+               отдельно от текста, не накладывая поверх лишних символов.
+               В покое все три стоят вплотную и выглядят одним логотипом. -->
+          <div class="hero-logo" role="img" aria-label="Актион">
+            <img class="logo-piece logo-piece--left" src="/static/img/logo-left.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--mid" src="/static/img/logo-mid.png" alt="" aria-hidden="true">
+            <img class="logo-piece logo-piece--right" src="/static/img/logo-right.png" alt="" aria-hidden="true">
           </div>
           <h2 class="empty-title">Здравствуйте! Чем могу помочь?</h2>
-          <p class="empty-text">Опишите проблему своими словами — помощник подберёт решение.</p>
+          <p class="empty-text">ИТ-поддержка ТПУ — опишите проблему, найдём решение.</p>
 
           <!-- Сюда встаёт поле ввода на главном экране. В диалоге app.js переносит его вниз, в #dock -->
           <div id="hero-slot" class="hero-slot">
@@ -67,30 +94,83 @@
             </div>
           </div>
 
-          <p class="examples-title">Или выберите частую проблему:</p>
-          <div class="examples">
-            <button type="button" class="example" data-example="Не подключается VPN">
-              <span class="example-icon" aria-hidden="true">🔒</span>Не подключается VPN
+          <!-- F1: категории каталога услуг, прямоугольные плитки в 2 колонки —
+               иконка, название и пример вопроса. Клик подставляет пример
+               в поле ввода, не отправляет сразу. -->
+          <p class="catalog-title">Частые категории:</p>
+          <div class="catalog">
+            <button type="button" class="catalog-tile" data-fill="Нужен доступ к сетевой папке отдела">
+              <span class="catalog-icon" aria-hidden="true">🔑</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Доступы</span>
+                <span class="catalog-example">Нужен доступ к папке</span>
+              </span>
             </button>
-            <button type="button" class="example" data-example="Не могу подключиться к корпоративному Wi-Fi">
-              <span class="example-icon" aria-hidden="true">📶</span>Не подключается Wi-Fi
+            <button type="button" class="catalog-tile" data-fill="Не подключается корпоративный VPN">
+              <span class="catalog-icon" aria-hidden="true">🔒</span>
+              <span class="catalog-text">
+                <span class="catalog-name">VPN</span>
+                <span class="catalog-example">Не подключается VPN</span>
+              </span>
             </button>
-            <button type="button" class="example" data-example="Не печатает принтер">
-              <span class="example-icon" aria-hidden="true">🖨️</span>Не печатает принтер
+            <button type="button" class="catalog-tile" data-fill="Не подключается к корпоративному Wi-Fi">
+              <span class="catalog-icon" aria-hidden="true">📶</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Wi-Fi</span>
+                <span class="catalog-example">Не подключается Wi-Fi</span>
+              </span>
             </button>
-            <button type="button" class="example" data-action="other">
-              <span class="example-icon" aria-hidden="true">💬</span>Другая проблема
+            <button type="button" class="catalog-tile" data-fill="Не печатает принтер">
+              <span class="catalog-icon" aria-hidden="true">🖨️</span>
+              <span class="catalog-text">
+                <span class="catalog-name">Оборудование</span>
+                <span class="catalog-example">Не печатает принтер</span>
+              </span>
             </button>
           </div>
         </div>
       </section>
 
       <!-- Лента сообщений -->
-      <div id="feed" class="feed" role="log" aria-live="polite" aria-label="Диалог с помощником"></div>
+      <div id="feed" class="feed" role="log" aria-live="polite" aria-label="Диалог с помощником" hidden></div>
     </main>
 
     <!-- Нижняя панель: сюда переезжает поле ввода, когда начался диалог -->
     <footer id="dock" class="dock" hidden></footer>
+
+    </div>
+
+    <!-- Краевые вкладки: «История обращений» слева, «Поиск по базе знаний»
+         справа. Видны всегда (и на главной, и в диалоге). Клик выдвигает
+         панель с той же стороны, прячет обе вкладки и сдвигает page-shell
+         в сторону — так фон не перекрывается криво, а просто отъезжает.
+         Вернуться к работе с остальным сайтом можно только закрыв панель
+         крестиком сбоку. -->
+    <button class="edge-tab edge-tab--left" id="edge-tab-history" type="button">
+      <span class="edge-tab-label">История обращений</span>
+    </button>
+    <button class="edge-tab edge-tab--right" id="edge-tab-search" type="button">
+      <span class="edge-tab-label">Поиск по базе знаний</span>
+    </button>
+
+    <div class="edge-backdrop" id="edge-backdrop"></div>
+
+    <aside class="edge-panel edge-panel--left" id="panel-history" aria-label="История обращений">
+      <button class="edge-panel-close" id="panel-history-close" type="button" aria-label="Закрыть">×</button>
+      <h3 class="edge-panel-title">История обращений</h3>
+      <div id="panel-history-body"></div>
+    </aside>
+
+    <aside class="edge-panel edge-panel--right" id="panel-search" aria-label="Поиск по базе знаний">
+      <button class="edge-panel-close" id="panel-search-close" type="button" aria-label="Закрыть">×</button>
+      <h3 class="edge-panel-title">Поиск по базе знаний</h3>
+      <label for="kb-search-input" class="visually-hidden">Поиск по базе знаний</label>
+      <div class="kb-search-box">
+        <span class="kb-search-icon" aria-hidden="true">🔎</span>
+        <input id="kb-search-input" type="text" placeholder="Поиск по базе знаний…" autocomplete="off">
+      </div>
+      <ul id="kb-search-results" class="kb-search-results" hidden></ul>
+    </aside>
 
   </div>
 </body>

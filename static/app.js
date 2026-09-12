@@ -9,12 +9,27 @@ const MAX_LEN = 2000;             // лимит длины сообщения
 const COUNTER_FROM = 1800;        // счётчик появляется после этого числа символов
 const REQUEST_TIMEOUT_MS = 20000; // дольше ждать нет смысла — показываем ошибку
 
-// Сервер присылает все шаги сразу, клиент показывает их по одному и отправляет
-// на сервер одно сообщение за весь гид: переходы между шагами в сеть не ходят.
+// Плейсхолдер главного поля ввода печатается и стирается по кругу — первая
+// фраза оставлена как была статична раньше, дальше — примеры проблем.
+const HERO_PLACEHOLDERS = [
+  "Опишите проблему…",
+  "Не подключается корпоративный VPN",
+  "Не могу подключиться к Wi-Fi",
+  "Не печатает принтер",
+];
+
+// Сервер присылает все шаги сразу; чекбоксы возле шагов — просто отметки для
+// пользователя (F2), они никуда не отправляются. Результат инструкции —
+// одно из двух сообщений на сервер, вне зависимости от того, что отмечено.
 const QR = {
   SOLVED: "Получилось",
   NOT_SOLVED: "Не получилось",
 };
+
+// F4: нажатие кнопки «Специалист» в шапке — обычное сообщение в общий автомат
+// диалога, дальше бэкенд сам решает, создавать ли обращение и как задать
+// уточняющий вопрос. Отдельный REST-вызов эскалации тут не нужен.
+const QR_CALL_SPECIALIST = "Позвать специалиста";
 
 // Сообщение, когда шаги из базы знаний не помогли и дальше отвечает ИИ (source: "general")
 const AI_HANDOFF_TEXT = "Рекомендации из базы знаний не помогли. Сейчас вам ответит ИИ-ассистент, ожидайте.";
@@ -52,6 +67,15 @@ const POLL_INTERVAL_MS = 6000;
 const STORE_KEY = "helpme:ticket";
 const STORE_TTL_MS = 24 * 60 * 60 * 1000;
 
+// F5: идентификатор клиента (браузера) — отдельно от текущего обращения,
+// живёт неограниченно долго и связывает все обращения человека в «Мои обращения».
+const CLIENT_STORE_KEY = "helpme:client";
+
+// F5: история обращений посетителя. Заглушка на моках убрана — эндпоинт живой.
+async function myTickets(clientId) {
+  return apiPost("/api/my/tickets", { client_id: clientId });
+}
+
 // ---------- Состояние ----------
 
 const state = {
@@ -61,12 +85,24 @@ const state = {
   conv: 0, // номер диалога: ответы на запросы из прошлого диалога не отрисовываются
   pollTimer: null,  // опрос реплик специалиста
   lastMsgId: 0,     // последнее показанное сообщение переписки
+  lastPublicNo: null, // короткий номер текущего обращения, если уже известен
+
+  screen: "home",   // "home" | "chat"
+  done: false,      // обращение завершено — прячем кнопку «Специалист»
+
+  lastClassifyKey: null, // чтобы не повторять строку категории на каждом сообщении
+  pendingParent: null,   // {ticketId, token} — «Проблема вернулась», привязать следующее сообщение
 };
 
 // ---------- DOM ----------
 
 let chatEl, feedEl, emptyEl, inputEl, sendBtn, counterEl;
-let composerEl, heroSlotEl, dockEl, backBtn, resumeEl;
+let composerEl, heroSlotEl, dockEl, backBtn, resumeEl, pageShellEl;
+let specialistBtn;
+let edgeTabHistory, edgeTabSearch, edgeBackdrop;
+let panelHistory, panelHistoryBody, panelHistoryClose;
+let panelSearch, panelSearchClose;
+let kbSearchInput, kbResultsEl;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 document.addEventListener("DOMContentLoaded", init);
@@ -83,25 +119,44 @@ function init() {
   dockEl = document.getElementById("dock");
   backBtn = document.getElementById("back-btn");
   resumeEl = document.getElementById("resume");
+  pageShellEl = document.getElementById("page-shell");
+
+  specialistBtn = document.getElementById("specialist-btn");
+
+  edgeTabHistory = document.getElementById("edge-tab-history");
+  edgeTabSearch = document.getElementById("edge-tab-search");
+  edgeBackdrop = document.getElementById("edge-backdrop");
+  panelHistory = document.getElementById("panel-history");
+  panelHistoryBody = document.getElementById("panel-history-body");
+  panelHistoryClose = document.getElementById("panel-history-close");
+  panelSearch = document.getElementById("panel-search");
+  panelSearchClose = document.getElementById("panel-search-close");
+
+  kbSearchInput = document.getElementById("kb-search-input");
+  kbResultsEl = document.getElementById("kb-search-results");
 
   inputEl.maxLength = MAX_LEN;
   inputEl.addEventListener("input", onInput);
   inputEl.addEventListener("keydown", onKeydown);
   sendBtn.addEventListener("click", submitInput);
 
-  // Частые проблемы: клик сразу отправляет, «Другая проблема» — просит описать
-  document.querySelectorAll(".example").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.dataset.action === "other") return startOtherProblem();
-      const text = btn.dataset.example;
-      send({ message: text }, { echo: text });
-    });
+  // F1: плитки категорий — только подставляют пример в поле, не отправляют
+  document.querySelectorAll(".catalog-tile").forEach((btn) => {
+    btn.addEventListener("click", () => fillInput(btn.dataset.fill));
   });
+  initKbSearch();
+  loadKbCount();
+  initHeroPlaceholder();
 
-  // «На главную»: просто уходим из диалога, ничего не отправляя
   backBtn.addEventListener("click", resetConversation);
+  specialistBtn.addEventListener("click", callSpecialist);
 
-  document.getElementById("resume-continue").addEventListener("click", resumeTicket);
+  edgeTabHistory.addEventListener("click", () => openEdgePanel("history"));
+  edgeTabSearch.addEventListener("click", () => openEdgePanel("search"));
+  panelHistoryClose.addEventListener("click", closeEdgePanel);
+  panelSearchClose.addEventListener("click", closeEdgePanel);
+
+  document.getElementById("resume-continue").addEventListener("click", () => resumeTicket());
   document.getElementById("resume-new").addEventListener("click", () => {
     // Отказались продолжать — старое обращение закрываем, чтобы оно
     // не висело в панели оператора как активное
@@ -111,6 +166,9 @@ function init() {
     hideResume();
   });
   offerResume();
+
+  window.addEventListener("popstate", onPopState);
+  try { history.replaceState({ screen: "home" }, "", location.pathname + location.search); } catch { /* file:// иногда против */ }
 
   updateComposer();
   // На телефоне не открываем клавиатуру сами
@@ -145,7 +203,14 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
     request_id: requestId || uuid(),
     message: quickReply ? null : text,
     quick_reply: quickReply || null,
+    client_id: loadClientId(),
   };
+  // «Проблема вернулась»: привязываем ровно первое сообщение нового обращения
+  // к старому, закрытому. Очищается только после успешного ответа сервера.
+  if (state.pendingParent) {
+    payload.parent_ticket_id = state.pendingParent.ticketId;
+    payload.parent_token = state.pendingParent.token;
+  }
 
   const conv = state.conv;
   setBusy(true);
@@ -172,6 +237,9 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
 
   if (data.ticket_id) state.ticketId = data.ticket_id;
   if (data.token) state.token = data.token;
+  if (data.client_id) saveClientId(data.client_id);
+  if (typeof data.public_no === "number") state.lastPublicNo = data.public_no;
+  state.pendingParent = null; // связка передана — дальше не нужна
   saveTicket(data);
 
   try {
@@ -180,6 +248,8 @@ async function send({ message = null, quickReply = null }, { echo = null, reques
     // Обращение у человека — начинаем следить за его ответами
     if (data.state === "ESCALATED") startPolling();
     else if (data.state === "RESOLVED") stopPolling();
+    state.done = data.state === "RESOLVED" || data.reply?.type === "closed";
+    syncSpecialistButton();
   } catch (e) {
     console.error("Не удалось отрисовать ответ", e, data);
     renderRequestError(new ApiError(-1, "render"), payload);
@@ -228,6 +298,26 @@ async function apiPost(path, body) {
   }
 }
 
+// F1: GET-запросы к базе знаний, без авторизации, без ticket_id/token.
+async function apiGet(path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(path, { signal: controller.signal });
+  } catch (e) {
+    throw new ApiError(0, e.name === "AbortError" ? "timeout" : "network");
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) throw new ApiError(res.status);
+  try {
+    return await res.json();
+  } catch {
+    throw new ApiError(-1, "bad_json");
+  }
+}
+
 /* ==========================================================================
    ОТРИСОВКА ОТВЕТОВ
    ========================================================================== */
@@ -264,20 +354,61 @@ function markGeneral(msg) {
   msg.body.prepend(badge);
 }
 
-// question — вопрос + кнопки быстрых ответов
+// F3: «Категория: VPN · Инструкция: «…» · Уверенность: 86 %» сразу под первым
+// содержательным ответом бота. Показывается один раз на набор значений —
+// если категория/уверенность не менялись, повторно не дублируем на каждом
+// следующем сообщении, чтобы не превращать ленту в простыню.
+function maybeRenderClassificationLine(body, data) {
+  if (!data.category) return; // классификация ещё не готова — показывать нечего
+  const percent = formatConfidence(data);
+  const key = `${data.category}|${data.article?.id || ""}|${percent}`;
+  if (state.lastClassifyKey === key) return;
+  state.lastClassifyKey = key;
+
+  const line = el("p", "classify-line");
+  const parts = [`Категория: ${data.category}`];
+  if (data.article?.title) parts.push(`Инструкция: «${data.article.title}»`);
+  parts.push(`Уверенность: ${percent}`);
+  line.append(document.createTextNode(parts.join(" · ") + " "));
+
+  const hint = el("span", "classify-hint", "?");
+  hint.tabIndex = 0;
+  hint.setAttribute("role", "note");
+  const hintText = "Уверенность относится к подбору инструкции из базы знаний, а не к ответу целиком";
+  hint.title = hintText;
+  hint.setAttribute("aria-label", hintText);
+  line.append(hint);
+
+  body.append(line);
+}
+
+// Правило 7 из ТЗ: если статьи нет — прочерк, а не «0 %» и не выдуманное число.
+function formatConfidence(data) {
+  if (!data.article || typeof data.confidence !== "number") return "—";
+  return `${Math.round(data.confidence * 100)} %`;
+}
+
+// question — вопрос + кнопки быстрых ответов.
+// Если source: "general" — это не уточняющий вопрос, а содержательный ответ
+// ИИ-ассистента без статьи из базы: добавляем оценку, как и для шагов.
 function renderQuestion(data) {
   const { reply } = data;
   const msg = addBotMessage(reply.text);
-  if (isGeneral(data)) markGeneral(msg);
+  const general = isGeneral(data);
+  if (general) markGeneral(msg);
+  maybeRenderClassificationLine(msg.body, data);
   renderQuickReplies(msg.body, reply.quick_replies);
+  appendRatingIfKnown(msg.body, data, { onlyIf: general });
   scrollToMessage(msg.row);
 }
 
-// choice — «уточните, о чём речь» + варианты категорий
+// choice — «уточните, о чём речь» + варианты категорий. Это меню, не ответ —
+// оценку сюда не добавляем.
 function renderChoice(data) {
   const { reply } = data;
   const msg = addBotMessage(reply.text || "Уточните, пожалуйста, о чём речь:");
   if (isGeneral(data)) markGeneral(msg);
+  maybeRenderClassificationLine(msg.body, data);
   renderQuickReplies(msg.body, reply.quick_replies);
   scrollToMessage(msg.row);
 }
@@ -305,8 +436,10 @@ function renderQuickReplies(container, options) {
   focusIfLost(group.firstElementChild);
 }
 
-// steps — сервер присылает все шаги сразу, клиент показывает их по одному.
-// Переход к следующему шагу — без запроса к серверу.
+// F2: сервер присылает все шаги сразу — показываем их сразу все, нумерованным
+// списком с необязательными чекбоксами. Итог — одна пара кнопок внизу:
+// «Проблема решена» / «Не помогло». Кнопка не подтверждает шаг, а завершает
+// всю инструкцию — раньше это было главной путаницей у ревьюеров.
 function renderSteps(data) {
   const { reply } = data;
   const steps = (Array.isArray(reply.steps) ? reply.steps : []).map(stepText).filter(Boolean);
@@ -315,72 +448,78 @@ function renderSteps(data) {
   const source = isGeneral(data) ? "general" : "kb";
   const msg = addBotMessage(reply.text, { wide: true });
   if (source === "general") markGeneral(msg);
-  showStep(msg.body, steps, 0, source);
-  // Кнопки из quick_replies (например «Позвать специалиста») — наравне с шагами
+  maybeRenderClassificationLine(msg.body, data);
+
+  const card = buildStepsCard(steps, source);
+  msg.body.append(card);
   renderQuickReplies(msg.body, reply.quick_replies);
+  appendRatingIfKnown(msg.body, data, { onlyIf: true });
   scrollToMessage(msg.row);
 }
 
-function showStep(container, steps, index, source) {
+function buildStepsCard(steps, source) {
   const total = steps.length;
-  const text = steps[index];
-
   const card = el("div", "step-card");
-  card.dataset.active = "step";
-  card.dataset.label = `Шаг ${index + 1} из ${total}: ${text}`;
+  card.dataset.active = "steps";
+  card.tabIndex = -1;
 
   const head = el("div", "step-head");
-  head.append(el("span", "step-counter", `Шаг ${index + 1} из ${total}`));
+  head.append(el("span", "step-counter", `Инструкция: ${total} ${pluralSteps(total)}`));
 
   const progress = el("div", "progress");
   progress.setAttribute("role", "progressbar");
   progress.setAttribute("aria-valuemin", "0");
   progress.setAttribute("aria-valuemax", String(total));
-  progress.setAttribute("aria-valuenow", String(index + 1));
-  progress.setAttribute("aria-label", "Прогресс по шагам");
+  progress.setAttribute("aria-valuenow", "0");
+  progress.setAttribute("aria-label", "Отмечено шагов");
   const fill = el("div", "progress-fill");
-  // Анимируем от предыдущего шага к текущему
-  fill.style.width = `${(index / total) * 100}%`;
   progress.append(fill);
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    fill.style.width = `${((index + 1) / total) * 100}%`;
-  }));
 
-  const body = el("p", "step-text", text);
+  const list = el("ol", "step-list");
+  steps.forEach((text) => {
+    const li = el("li", "step-item");
+    const label = el("label", "step-item-label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "step-check";
+    checkbox.addEventListener("change", () => updateStepsProgress(list, progress, fill, total));
+    const span = el("span", "step-item-text", text);
+    label.append(checkbox, span);
+    li.append(label);
+    list.append(li);
+  });
 
   const actions = el("div", "step-actions");
-  const okBtn = el("button", "btn btn--primary", "Всё получилось");
-  const failBtn = el("button", "btn btn--ghost", "Проблема ещё не решена");
+  const okBtn = el("button", "btn btn--primary", "Проблема решена");
+  const failBtn = el("button", "btn btn--ghost", "Не помогло");
   okBtn.type = failBtn.type = "button";
-  okBtn.addEventListener("click", () => answerStep(card, true, steps, index, source));
-  failBtn.addEventListener("click", () => answerStep(card, false, steps, index, source));
+  okBtn.addEventListener("click", () => finishSteps(card, true, source));
+  failBtn.addEventListener("click", () => finishSteps(card, false, source));
   actions.append(okBtn, failBtn);
 
-  card.append(head, progress, body, actions);
-  // Новый шаг встаёт над кнопками быстрых ответов, если они есть
-  const chips = container.querySelector(":scope > .quick-replies");
-  if (chips) container.insertBefore(card, chips);
-  else container.append(card);
-  focusIfLost(okBtn);
+  card.append(head, progress, list, actions);
+  focusIfLost(card);
   return card;
 }
 
-// «Всё получилось» — сразу одно сообщение на сервер, дальше шаги не показываем.
-// «Проблема ещё не решена» — следующий шаг локально; на последнем шаге — одно сообщение.
-function answerStep(card, solved, steps, index, source) {
-  if (state.busy || card.dataset.active !== "step") return; // двойное нажатие
-  collapseStep(card, solved ? "ok" : "failed");
+// Чекбоксы ни на что не влияют, кроме прогресс-бара — это просто отметки
+// «где я в списке», а не подтверждение шага (см. F2 в ТЗ).
+function updateStepsProgress(list, progress, fill, total) {
+  const checked = list.querySelectorAll(".step-check:checked").length;
+  progress.setAttribute("aria-valuenow", String(checked));
+  fill.style.width = `${(checked / total) * 100}%`;
+}
+
+// «Проблема решена» — одно сообщение на сервер. «Не помогло» — тоже одно,
+// с предупреждением про передачу ИИ-ассистенту, если источник был kb.
+function finishSteps(card, solved, source) {
+  if (state.busy || card.dataset.active !== "steps") return; // двойное нажатие
+  const checked = card.querySelectorAll(".step-check:checked").length;
+  const total = card.querySelectorAll(".step-check").length;
+  collapseStepsCard(card, solved ? "ok" : "failed", checked, total);
 
   if (solved) return send({ quickReply: QR.SOLVED });
 
-  if (index < steps.length - 1) {
-    const next = showStep(card.parentElement, steps, index + 1, source);
-    scrollToMessage(next);
-    return;
-  }
-
-  // Шаги кончились. Если это были шаги из базы знаний — предупреждаем, что дальше ответит ИИ.
-  // Если сервер вместо ИИ-ответа пришлёт что-то другое, предупреждение убираем.
   if (source === "kb") {
     const note = addBotMessage(AI_HANDOFF_TEXT);
     scrollToMessage(note.row);
@@ -391,22 +530,22 @@ function answerStep(card, solved, steps, index, source) {
   send({ quickReply: QR.NOT_SOLVED });
 }
 
-// Сворачиваем шаг: остаётся в ленте приглушённым, с отметкой результата
-function collapseStep(card, result) {
-  const label = card.dataset.label || "Шаг";
+// Сворачиваем инструкцию: остаётся в ленте приглушённой строкой с итогом.
+function collapseStepsCard(card, result, checked, total) {
   delete card.dataset.active;
   card.className = `step-card is-collapsed is-${result}`;
   card.replaceChildren();
 
   const marks = { ok: "✓", failed: "✕", skipped: "–" };
-  const srText = { ok: "Проблема решена на этом шаге. ", failed: "Не помогло. ", skipped: "Пропущено. " };
+  const texts = {
+    ok: "Проблема решена",
+    failed: `Не помогло (отмечено ${checked} из ${total})`,
+    skipped: `Пропущено (отмечено ${checked} из ${total})`,
+  };
 
   const mark = el("span", "step-mark", marks[result]);
   mark.setAttribute("aria-hidden", "true");
-  const textEl = el("span", "step-collapsed-text");
-  textEl.append(el("span", "visually-hidden", srText[result]), label);
-  textEl.title = label;
-
+  const textEl = el("span", "step-collapsed-text", texts[result]);
   card.append(mark, textEl);
 }
 
@@ -414,6 +553,14 @@ function collapseStep(card, result) {
 function stepText(step) {
   if (typeof step === "string") return step;
   return step?.text || step?.title || "";
+}
+
+// Русское склонение «шаг/шага/шагов»
+function pluralSteps(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "шаг";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "шага";
+  return "шагов";
 }
 
 // Исход определяется только данными бэкенда:
@@ -435,8 +582,7 @@ function renderCard(data) {
   };
   const msg = addBotMessage(reply.text || fallbackText[outcome]);
 
-  // Нецелевое обращение: карточку задачи не показываем — задачи не было.
-  // Оценку тоже не просим: оценивать здесь нечего.
+  // Нецелевое обращение: полную карточку и оценку не показываем — задачи не было.
   if (outcome === "closed") {
     const actions = el("div", "msg-actions card-actions");
     actions.append(button("btn btn--primary", "Новое обращение", resetConversation));
@@ -445,9 +591,11 @@ function renderCard(data) {
     return;
   }
 
-  // Всё, что должен понять пользователь — какая проблема, решена ли она,
-  // что дальше и нужен ли специалист — есть в тексте ответа. Полная карточка
-  // обращения живёт в панели оператора, выгрузке и вебхуке.
+  // F3: карточка обращения — категория, суть, что попробовали, собранные
+  // сведения, исход и дата. Раньше это было видно только в панели оператора.
+  const ticketCardEl = renderTicketCard(card);
+  if (ticketCardEl) msg.body.append(ticketCardEl);
+
   msg.body.append(renderRating(ticketId));
 
   const actions = el("div", "msg-actions card-actions");
@@ -498,17 +646,86 @@ function cardOutcome(data) {
   return "unsolved";
 }
 
-// Оценка ответа: 👍 = 5, 👎 = 1 (API принимает 1..5)
+// F3: компактная карточка обращения — номер, категория, суть, что уже
+// попробовали, собранные сведения, исход и дата. Не «простыня»: пустые
+// блоки (нет slots / steps_done) просто не рисуются.
+function renderTicketCard(card) {
+  if (!card || !card.ticket_id) return null;
+
+  const box = el("div", "ticket-card");
+
+  const head = el("div", "ticket-card-head");
+  head.append(el("span", "ticket-card-no", `Обращение №${card.public_no ?? "—"}`));
+  if (card.category) head.append(el("span", "ticket-card-category", card.category));
+  box.append(head);
+
+  if (card.problem_summary) {
+    box.append(el("p", "ticket-card-summary", card.problem_summary));
+  }
+
+  if (Array.isArray(card.steps_done) && card.steps_done.length) {
+    const wrap = el("div", "ticket-card-block");
+    wrap.append(el("p", "ticket-card-block-title", "Что уже попробовали"));
+    const list = el("ul", "ticket-card-list");
+    card.steps_done.forEach((s) => list.append(el("li", null, stepText(s))));
+    wrap.append(list);
+    box.append(wrap);
+  }
+
+  const slots = card.slots && typeof card.slots === "object" ? Object.entries(card.slots) : [];
+  if (slots.length) {
+    const wrap = el("div", "ticket-card-block");
+    wrap.append(el("p", "ticket-card-block-title", "Собранные сведения"));
+    const list = el("ul", "ticket-card-list");
+    slots.forEach(([key, value]) => list.append(el("li", null, `${key}: ${value}`)));
+    wrap.append(list);
+    box.append(wrap);
+  }
+
+  const footer = el("div", "ticket-card-footer");
+  footer.append(el("span", null, ticketOutcomeLabel(card)));
+  if (card.created_at) footer.append(el("span", null, formatDate(card.created_at)));
+  box.append(footer);
+
+  return box;
+}
+
+function ticketOutcomeLabel(card) {
+  if (card.out_of_scope) return "Не по адресу";
+  if (card.resolved_by_bot) return "Решено ботом";
+  if (card.needs_specialist) return "Передано специалисту";
+  return "В процессе";
+}
+
+function formatDate(iso) {
+  try {
+    return new Date(iso).toLocaleString("ru-RU");
+  } catch {
+    return "";
+  }
+}
+
+// F3: оценка нужна не только в итоге, а под каждым содержательным ответом —
+// у ревьюера иначе не было повода до неё дойти. Добавляется, только если
+// уже известен ticket_id (данные ответа или уже сохранённые в state).
+function appendRatingIfKnown(body, data, { onlyIf }) {
+  if (!onlyIf) return;
+  const ticketId = data.ticket_id || state.ticketId;
+  if (!ticketId) return;
+  body.append(renderRating(ticketId));
+}
+
+// Оценка ответа: 👍 = помогло (rating: 1), 👎 = не помогло (rating: 0) — бинарно,
+// как того требует контракт. После нажатия кнопки остаются на месте, нажатая —
+// подсвечена, а не пропадают совсем: у конкурентов именно это путало ревьюеров
+// («то ли оценено, то ли нет — просто пропали звёзды после клика»).
 function renderRating(ticketId) {
   const wrap = el("div", "rating");
   const label = el("p", "rating-label", "Помог ли ответ?");
-  const buttons = el("div", "msg-actions");
+  const buttons = el("div", "msg-actions rating-buttons");
   const status = el("p", "rating-status");
   status.setAttribute("role", "status");
 
-  // Оценка бинарная: 1 — помогло, 0 — нет. Из неё считается доля полезных
-  // ответов в процентах; средний балл по пятибалльной шкале на таком
-  // количестве оценок не значил бы ничего.
   const options = [
     { text: "👍 Помогло", rating: 1 },
     { text: "👎 Не помогло", rating: 0 },
@@ -517,15 +734,16 @@ function renderRating(ticketId) {
     const btn = el("button", "btn btn--ghost", text);
     btn.type = "button";
     btn.addEventListener("click", async () => {
-      if (wrap.dataset.sending) return; // двойное нажатие
+      if (wrap.dataset.sending || wrap.dataset.rated) return; // повторное нажатие
       wrap.dataset.sending = "1";
       btns.forEach((b) => (b.disabled = true));
       status.textContent = "";
       try {
         await rateTicket(ticketId, rating);
-        label.remove();
-        buttons.remove();
-        status.textContent = "Спасибо за оценку!";
+        delete wrap.dataset.sending;
+        wrap.dataset.rated = String(rating);
+        btn.classList.add("is-selected");
+        status.textContent = "Спасибо, учтено";
       } catch (e) {
         delete wrap.dataset.sending;
         btns.forEach((b) => (b.disabled = false));
@@ -560,6 +778,22 @@ function rateTicket(ticketId, rating) {
     rating,
     token: state.token,
   });
+}
+
+/* ==========================================================================
+   F4: «Позвать специалиста»
+   Кнопка в шапке, видна в диалоге, пока обращение не завершено. Это обычное
+   сообщение в общий автомат — бэкенд сам решает, что делать, если обращения
+   ещё нет (задаст уточняющий вопрос).
+   ========================================================================== */
+
+function callSpecialist() {
+  if (state.busy) return;
+  send({ quickReply: QR_CALL_SPECIALIST });
+}
+
+function syncSpecialistButton() {
+  specialistBtn.hidden = state.screen !== "chat" || state.done;
 }
 
 /* ==========================================================================
@@ -599,6 +833,16 @@ function clearSaved() {
   try { localStorage.removeItem(STORE_KEY); } catch { /* не критично */ }
 }
 
+// F5: client_id — отдельный, самостоятельный ключ, отдельно от helpme:ticket.
+function saveClientId(id) {
+  if (!id) return;
+  try { localStorage.setItem(CLIENT_STORE_KEY, id); } catch { /* приватное окно */ }
+}
+
+function loadClientId() {
+  try { return localStorage.getItem(CLIENT_STORE_KEY); } catch { return null; }
+}
+
 function offerResume() {
   if (!loadSaved()) return;
   resumeEl.hidden = false;
@@ -608,8 +852,12 @@ function hideResume() {
   if (resumeEl) resumeEl.hidden = true;
 }
 
-async function resumeTicket() {
-  const saved = loadSaved();
+// saved — {ticketId, token, publicNo?}. Без аргумента берёт то, что лежит
+// в localStorage (обычный сценарий восстановления после перезагрузки).
+// С аргументом — используется и из «Мои обращения» (F5), чтобы продолжить
+// или открыть переписку выбранного обращения.
+async function resumeTicket(saved) {
+  saved = saved || loadSaved();
   if (!saved) return hideResume();
   hideResume();
 
@@ -630,6 +878,10 @@ async function resumeTicket() {
   state.ticketId = saved.ticketId;
   state.token = saved.token;
   state.lastMsgId = data.last_id || 0;
+  state.done = false;
+  state.lastClassifyKey = null;
+  state.pendingParent = null;
+  saveTicket(data); // если открыли обращение из «Мои обращения» — оно теперь и есть текущее
 
   setMode("chat");
   feedEl.replaceChildren();
@@ -639,9 +891,13 @@ async function resumeTicket() {
     else addBotMessage(m.text);
   }
 
-  const note = addBotMessage(`Обращение №${saved.ticketId} восстановлено. `
-    + `Продолжайте — контекст я помню.`);
-
+  // Правило 6: внутренний ticket_id пользователю не показываем никогда —
+  // только короткий public_no, и то если он уже пришёл с сервера.
+  const publicNo = typeof data.public_no === "number" ? data.public_no : saved.publicNo;
+  if (typeof publicNo === "number") state.lastPublicNo = publicNo;
+  const note = addBotMessage(publicNo
+    ? `Обращение №${publicNo} восстановлено. Продолжайте — контекст я помню.`
+    : "Обращение восстановлено. Продолжайте — контекст я помню.");
   scrollToMessage(note.row);
 
   // Шаги в переписке не хранятся — сервер отдаёт их отдельным полем.
@@ -656,6 +912,8 @@ async function resumeTicket() {
   }
 
   if (data.state === "ESCALATED") startPolling();
+  state.done = data.state === "RESOLVED";
+  syncSpecialistButton();
 }
 
 /* ==========================================================================
@@ -703,6 +961,7 @@ async function pollOperator() {
 
   if (conv !== state.conv) return;         // пользователь уже ушёл на главную
 
+  if (typeof data.public_no === "number") state.lastPublicNo = data.public_no;
   if (typeof data.last_id === "number") state.lastMsgId = data.last_id;
   for (const m of data.messages || []) {
     addOperatorMessage(m.text);
@@ -711,6 +970,8 @@ async function pollOperator() {
   if (data.state === "RESOLVED") {
     stopPolling();
     clearSaved();
+    state.done = true;
+    syncSpecialistButton();
     // Специалист закрыл обращение — молча обрывать диалог нельзя
     const msg = addBotMessage("Специалист завершил обращение. "
       + "Если проблема вернётся — начните новое, я помогу.");
@@ -722,20 +983,10 @@ async function pollOperator() {
 }
 
 function addOperatorMessage(text) {
-  const row = el("div", "msg msg--bot msg--operator");
-  const avatar = el("div", "avatar");
-  avatar.setAttribute("aria-hidden", "true");
-  avatar.innerHTML = ICON_OPERATOR;       // статичная строка, не данные
-
-  const body = el("div", "msg-body");
-  const bubble = el("div", "bubble");
-  bubble.append(el("p", "operator-label", "Специалист поддержки"));
-  bubble.append(el("p", "bubble-text", text));   // textContent — безопасно
-  body.append(bubble);
-
-  row.append(avatar, body);
+  const { row } = buildOperatorMessage(text);
   feedEl.append(row);
   scrollToMessage(row);
+  return row;
 }
 
 // Строка «Результат» в карточке. «Без специалиста» — только если бэкенд
@@ -748,14 +999,27 @@ function renderErrorReply(data, payload) {
   });
 }
 
-// Ошибка транспорта или HTTP-код
+// Ошибка транспорта или HTTP-код.
+// 409 — обращение уже закрыто (например, специалист его завершил, пока
+// человек дописывал сообщение). Это не баг, а одна из проверок безопасности
+// (см. раздел 5, «Важно»): ведём сразу на «Проблема вернулась», а не просто
+// на пустое «Новое обращение», чтобы не терять контекст.
 function renderRequestError(err, payload) {
   const status = err instanceof ApiError ? err.status : 0;
   const code = err instanceof ApiError ? err.code : "network";
   const text = ERROR_TEXT[status] || ERROR_TEXT[code] || ERROR_TEXT.default;
 
-  if (status === 404 || status === 409) {
-    clearSaved();   // обращения больше нет — восстанавливать будет нечего
+  if (status === 409) {
+    const oldTicket = { ticket_id: state.ticketId, token: state.token, public_no: state.lastPublicNo };
+    clearSaved();
+    showError("Обращение закрыто, создаём новое.", {
+      label: "Проблема вернулась",
+      onClick: () => returnToProblem(oldTicket),
+    });
+    return;
+  }
+  if (status === 404) {
+    clearSaved();
     showError(text, { label: "Новое обращение", onClick: resetConversation });
   } else if (status === 422) {
     showError(text, null); // повтор того же текста не поможет
@@ -784,18 +1048,27 @@ function showError(text, action) {
 
 /* ==========================================================================
    ЭЛЕМЕНТЫ ЛЕНТЫ
+   Построение узла (buildXMessage) отделено от добавления в живую ленту
+   (addXMessage), чтобы те же самые «пузыри» можно было использовать
+   и в истории обращений (F5, только для чтения).
    ========================================================================== */
 
-function addUserMessage(text) {
+function buildUserMessage(text) {
   const row = el("div", "msg msg--user");
   const bubble = el("div", "bubble");
   bubble.append(el("p", "bubble-text", text));
   row.append(bubble);
-  feedEl.append(row);
-  scrollToBottom();
+  return { row, bubble };
 }
 
-function addBotMessage(text, { variant = null, wide = false } = {}) {
+function addUserMessage(text) {
+  const { row } = buildUserMessage(text);
+  feedEl.append(row);
+  scrollToBottom();
+  return row;
+}
+
+function buildBotMessage(text, { variant = null, wide = false } = {}) {
   const row = el("div", "msg msg--bot");
   const avatar = el("div", "avatar");
   avatar.setAttribute("aria-hidden", "true");
@@ -815,7 +1088,28 @@ function addBotMessage(text, { variant = null, wide = false } = {}) {
   }
 
   row.append(avatar, body);
-  feedEl.append(row);
+  return { row, body, bubble };
+}
+
+function addBotMessage(text, opts = {}) {
+  const msg = buildBotMessage(text, opts);
+  feedEl.append(msg.row);
+  return msg;
+}
+
+function buildOperatorMessage(text) {
+  const row = el("div", "msg msg--bot msg--operator");
+  const avatar = el("div", "avatar");
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.innerHTML = ICON_OPERATOR; // статичная строка, не данные
+
+  const body = el("div", "msg-body");
+  const bubble = el("div", "bubble");
+  bubble.append(el("p", "operator-label", "Специалист поддержки"));
+  bubble.append(el("p", "bubble-text", text)); // textContent — безопасно
+  body.append(bubble);
+
+  row.append(avatar, body);
   return { row, body, bubble };
 }
 
@@ -850,8 +1144,13 @@ function hideTyping() {
 // Когда пользователь пишет текст, висящие кнопки прошлого ответа убираем
 function retireActiveControls() {
   feedEl.querySelectorAll("[data-active]").forEach((node) => {
-    if (node.dataset.active === "step") collapseStep(node, "skipped");
-    else node.remove();
+    if (node.dataset.active === "steps") {
+      const checked = node.querySelectorAll(".step-check:checked").length;
+      const total = node.querySelectorAll(".step-check").length;
+      collapseStepsCard(node, "skipped", checked, total);
+    } else {
+      node.remove();
+    }
   });
 }
 
@@ -870,6 +1169,10 @@ function resetConversation() {
   state.ticketId = null;
   state.token = null;
   state.lastMsgId = 0;
+  state.lastPublicNo = null;
+  state.done = false;
+  state.lastClassifyKey = null;
+  state.pendingParent = null;
   clearSaved();
   hideResume();
 
@@ -879,25 +1182,383 @@ function resetConversation() {
   if (window.matchMedia("(hover: hover)").matches) inputEl.focus();
 }
 
-// Главный экран: поле ввода по центру над частыми проблемами.
-// Диалог: то же самое поле переезжает в нижнюю панель.
-function setMode(mode) {
-  const home = mode === "home";
-  if (emptyEl.hidden === !home) return; // уже в нужном режиме
+// Экран: «home» (главная) или «chat» (диалог). Переход между ними —
+// отдельная запись в истории браузера (F6): кнопка «назад» в браузере
+// работает так же, как и наша собственная кнопка «на главную».
+function setMode(mode, { push = true } = {}) {
+  if (state.screen === mode) return; // уже в нужном режиме
   const hadFocus = composerEl.contains(document.activeElement);
+  state.screen = mode;
+
+  const home = mode === "home";
+  const chatMode = mode === "chat";
+
   emptyEl.hidden = !home;
-  dockEl.hidden = home;
+  feedEl.hidden = !chatMode;
+  dockEl.hidden = !chatMode;
   backBtn.hidden = home;
-  (home ? heroSlotEl : dockEl).append(composerEl);
-  if (hadFocus) inputEl.focus({ preventScroll: true }); // перенос в DOM сбрасывает фокус
+
+  if (home) heroSlotEl.append(composerEl);
+  else if (chatMode) dockEl.append(composerEl);
+
+  if (!home) hideResume();
+  syncSpecialistButton();
+
+  if (hadFocus && chatMode) inputEl.focus({ preventScroll: true }); // перенос в DOM сбрасывает фокус
+
+  if (push) {
+    const url = chatMode ? "#/chat" : "#/";
+    try { history.pushState({ screen: mode }, "", url); } catch { /* file:// иногда против */ }
+  }
 }
 
-// «Другая проблема»: темы заново не предлагаем и ничего не отправляем.
-// Просим описать своими словами — описание уйдёт на сервер первым сообщением.
-function startOtherProblem() {
-  if (state.busy) return;
+function onPopState(event) {
+  const target = event.state?.screen || "home";
+  if (target === "chat" && !state.ticketId) return setMode("home", { push: false });
+  setMode(target, { push: false });
+}
+
+// F1: плитка каталога — подставляет пример в поле, не отправляет.
+// Пользователь дописывает своими словами и отправляет сам.
+function fillInput(text) {
+  if (!text) return;
+  setMode("home"); // на случай если каталог когда-нибудь станет виден и не только на главной
+  inputEl.value = text;
+  inputEl.focus();
+  inputEl.setSelectionRange(text.length, text.length);
+  autoResize();
+  updateComposer();
+}
+
+/* ==========================================================================
+   F1: ПОИСК ПО БАЗЕ ЗНАНИЙ
+   GET /api/kb/search — без авторизации. Подсказка, а не критичная функция:
+   ошибки сети тут просто тихо ничего не показывают.
+   ========================================================================== */
+
+let kbSearchTimer = null;
+
+/* ==========================================================================
+   ПЛЕЙСХОЛДЕР ГЛАВНОГО ПОЛЯ: печатается и стирается по кругу
+   Идёт постоянно, независимо от фокуса — placeholder всё равно не виден,
+   пока в поле есть текст, так что мешать вводу это никак не может.
+   ========================================================================== */
+
+let heroPlaceholderTimer = null;
+
+function initHeroPlaceholder() {
+  if (!inputEl) return;
+  if (reducedMotion.matches) {
+    inputEl.placeholder = HERO_PLACEHOLDERS[0];
+    return;
+  }
+
+  const TYPE_MS = 55, ERASE_MS = 28, PAUSE_MS = 1800, GAP_MS = 300;
+  let qi = 0;
+
+  function cycle() {
+    const text = HERO_PLACEHOLDERS[qi % HERO_PLACEHOLDERS.length];
+    let i = 0;
+    (function typeChar() {
+      inputEl.placeholder = text.slice(0, i);
+      if (i < text.length) {
+        i++;
+        heroPlaceholderTimer = setTimeout(typeChar, TYPE_MS);
+      } else {
+        heroPlaceholderTimer = setTimeout(eraseChar, PAUSE_MS);
+      }
+    })();
+    function eraseChar() {
+      if (i > 0) {
+        i--;
+        inputEl.placeholder = text.slice(0, i);
+        heroPlaceholderTimer = setTimeout(eraseChar, ERASE_MS);
+      } else {
+        qi++;
+        heroPlaceholderTimer = setTimeout(cycle, GAP_MS);
+      }
+    }
+  }
+
+  cycle();
+}
+
+function initKbSearch() {
+  if (!kbSearchInput) return;
+  kbSearchInput.addEventListener("input", () => {
+    clearTimeout(kbSearchTimer);
+    const q = kbSearchInput.value.trim();
+    if (!q) return renderKbResults([]);
+    kbSearchTimer = setTimeout(() => runKbSearch(q), 300);
+  });
+}
+
+async function runKbSearch(q) {
+  let items;
+  try {
+    items = await kbSearch(q, 10);
+  } catch {
+    return; // подсказка необязательна — молчим при ошибке сети
+  }
+  renderKbResults(Array.isArray(items) ? items : []);
+}
+
+function kbSearch(q, limit) {
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  return apiGet(`/api/kb/search?${params.toString()}`);
+}
+
+function renderKbResults(items) {
+  kbResultsEl.replaceChildren();
+  kbResultsEl.hidden = items.length === 0;
+  items.forEach((item) => {
+    const li = el("li");
+    const btn = el("button", "kb-result", item.title || item.id || "Без названия");
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      const text = item.title || item.id;
+      kbSearchInput.value = "";
+      renderKbResults([]);
+      closeEdgePanel(); // выбрали статью — возвращаемся к диалогу, куда уйдёт сообщение
+      send({ message: text }, { echo: text });
+    });
+    li.append(btn);
+    kbResultsEl.append(li);
+  });
+}
+
+// Счётчик «N инструкций» — реальное число из API, не хардкод. Раньше был
+// отдельной строкой под полем и растягивал экран по высоте — теперь просто
+// часть плейсхолдера, дополнительного места не занимает.
+async function loadKbCount() {
+  if (!kbSearchInput) return;
+  let items;
+  try {
+    items = await kbSearch("", 1000);
+  } catch {
+    return; // бэкенд недоступен — оставляем обычный плейсхолдер, это не критично
+  }
+  if (!Array.isArray(items)) return;
+  kbSearchInput.placeholder = `Поиск по базе знаний · ${items.length} ${pluralInstructions(items.length)}`;
+}
+
+function pluralInstructions(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "инструкция";
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "инструкции";
+  return "инструкций";
+}
+
+/* ==========================================================================
+   КРАЕВЫЕ ВКЛАДКИ: «История обращений» и «Поиск по базе знаний»
+   Две вкладки-скобки по краям экрана, видны всегда — и на главной, и в
+   диалоге. Клик выдвигает панель с той же стороны и прячет обе вкладки;
+   пока панель открыта, фон затемнён и перехватывает клики — продолжить
+   работу с остальным сайтом можно только закрыв её крестиком.
+   Список обращений приходит с /api/my/tickets по client_id (см. MOCK выше,
+   пока бэкенд не выкатили). Переписка одного обращения — уже существующий
+   POST /api/chat/updates с full: true, он работает и для закрытых обращений.
+   ========================================================================== */
+
+function openEdgePanel(which) {
+  const isHistory = which === "history";
+  const tab = isHistory ? edgeTabHistory : edgeTabSearch;
+  const otherTab = isHistory ? edgeTabSearch : edgeTabHistory;
+  const panel = isHistory ? panelHistory : panelSearch;
+
+  tab.classList.add("is-hidden");
+  otherTab.classList.add("is-hidden");
+  tab.tabIndex = otherTab.tabIndex = -1;
+  panel.classList.add("is-open");
+  panel.inert = false;
+  edgeBackdrop.classList.add("is-visible");
+
+  // Фон отъезжает в сторону, противоположную панели: левая панель выезжает
+  // слева — значит фон сдвигаем вправо, и наоборот. Так подписи и кнопки
+  // на заднем плане остаются целиком видны, а не перекрываются криво.
+  pageShellEl.classList.remove("is-shifted-left", "is-shifted-right");
+  pageShellEl.classList.add(isHistory ? "is-shifted-right" : "is-shifted-left");
+
+  if (isHistory) loadHistoryPanel();
+  panel.querySelector(".edge-panel-close")?.focus({ preventScroll: true });
+}
+
+function closeEdgePanel() {
+  panelHistory.classList.remove("is-open");
+  panelSearch.classList.remove("is-open");
+  panelHistory.inert = true;
+  panelSearch.inert = true;
+  edgeBackdrop.classList.remove("is-visible");
+  edgeTabHistory.classList.remove("is-hidden");
+  edgeTabSearch.classList.remove("is-hidden");
+  edgeTabHistory.tabIndex = edgeTabSearch.tabIndex = 0;
+  pageShellEl.classList.remove("is-shifted-left", "is-shifted-right");
+}
+
+async function loadHistoryPanel() {
+  panelHistoryBody.replaceChildren(el("p", "history-status", "Загрузка…"));
+
+  const clientId = loadClientId();
+  if (!clientId) {
+    panelHistoryBody.replaceChildren(el("p", "history-status", "Пока вы не отправили ни одного обращения."));
+    return;
+  }
+
+  let data;
+  try {
+    data = await myTickets(clientId);
+  } catch {
+    panelHistoryBody.replaceChildren();
+    panelHistoryBody.append(el("p", "history-status", "Не удалось загрузить обращения."));
+    panelHistoryBody.append(button("btn btn--ghost", "Повторить", loadHistoryPanel));
+    return;
+  }
+
+  const tickets = Array.isArray(data.tickets) ? data.tickets : [];
+  renderHistoryPanelList(tickets);
+}
+
+function renderHistoryPanelList(tickets) {
+  panelHistoryBody.replaceChildren();
+  if (!tickets.length) {
+    panelHistoryBody.append(el("p", "history-status", "Пока вы не отправили ни одного обращения."));
+    return;
+  }
+  const list = el("div", "history-list");
+  const sorted = [...tickets].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  sorted.forEach((ticket) => list.append(renderHistoryRow(ticket)));
+  panelHistoryBody.append(list);
+}
+
+function renderHistoryRow(ticket) {
+  const row = el("button", "history-row");
+  row.type = "button";
+
+  const head = el("div", "history-row-head");
+  head.append(el("span", "history-row-no", `№${ticket.public_no ?? "—"}`));
+  const { label, cls } = historyStatusInfo(ticket);
+  head.append(el("span", `history-badge history-badge--${cls}`, label));
+  row.append(head);
+
+  if (ticket.category) row.append(el("p", "history-row-category", ticket.category));
+  row.append(el("p", "history-row-summary", ticket.problem_summary || "—"));
+
+  const meta = el("div", "history-row-meta");
+  meta.append(el("span", null, formatDate(ticket.created_at)));
+  if (typeof ticket.rating === "number") {
+    meta.append(el("span", null, ticket.rating === 1 ? "👍" : "👎"));
+  }
+  row.append(meta);
+
+  row.addEventListener("click", () => renderHistoryPanelDetail(ticket));
+  return row;
+}
+
+// Статусы человеческим языком (см. F5 в ТЗ). Явных флагов на бэкенде четыре —
+// resolved_by_bot, needs_specialist, out_of_scope и терминальность (RESOLVED).
+// Пятый вариант, «В процессе», нужен для ещё не завершённых обращений —
+// в списке они тоже есть (с кнопкой «Продолжить»), и им нужен свой ярлык.
+function historyStatusInfo(ticket) {
+  if (ticket.out_of_scope) return { label: "Не по адресу", cls: "muted" };
+  if (ticket.resolved_by_bot) return { label: "Решено", cls: "ok" };
+  if (ticket.needs_specialist) return { label: "У специалиста", cls: "info" };
+  if (ticket.state === "RESOLVED") return { label: "Закрыто", cls: "muted" };
+  return { label: "В процессе", cls: "info" };
+}
+
+// Три варианта нижней кнопки в просмотре обращения (см. F5, п.5 в ТЗ).
+function historyActionKind(ticket) {
+  if (ticket.state === "ESCALATED") return "escalated";
+  if (["NEW", "CLASSIFYING", "CLARIFYING", "SOLVING", "VERIFYING"].includes(ticket.state)) return "continue";
+  return "closed"; // RESOLVED и всё, что не попало в первые два случая
+}
+
+// Переписка одного обращения — рисуется внутри той же левой панели,
+// поверх списка; «‹ К списку обращений» возвращает без закрытия панели.
+async function renderHistoryPanelDetail(ticket) {
+  panelHistoryBody.replaceChildren();
+
+  const back = el("button", "edge-panel-back", "‹ К списку обращений");
+  back.type = "button";
+  back.addEventListener("click", loadHistoryPanel);
+  panelHistoryBody.append(back);
+
+  const feedWrap = el("div", "history-detail-feed");
+  feedWrap.append(el("p", "history-status", "Загрузка переписки…"));
+  panelHistoryBody.append(feedWrap);
+
+  let data;
+  try {
+    data = await apiPost("/api/chat/updates", {
+      ticket_id: ticket.ticket_id, token: ticket.token, after: 0, full: true,
+    });
+  } catch {
+    feedWrap.replaceChildren();
+    feedWrap.append(el("p", "history-status", "Не удалось загрузить переписку."));
+    feedWrap.append(button("btn btn--ghost", "Повторить", () => renderHistoryPanelDetail(ticket)));
+    return;
+  }
+
+  feedWrap.replaceChildren();
+  for (const m of data.messages || []) {
+    let node;
+    if (m.role === "user") node = buildUserMessage(m.text).row;
+    else if (m.role === "operator") node = buildOperatorMessage(m.text).row;
+    else node = buildBotMessage(m.text).row;
+    feedWrap.append(node);
+  }
+  if (!data.messages || !data.messages.length) {
+    feedWrap.append(el("p", "history-status", "В этом обращении пока нет сообщений."));
+  }
+
+  const actions = el("div", "history-detail-actions");
+  panelHistoryBody.append(actions);
+  renderHistoryDetailActions(actions, ticket);
+}
+
+function renderHistoryDetailActions(container, ticket) {
+  container.replaceChildren();
+  const kind = historyActionKind(ticket);
+
+  if (kind === "continue") {
+    container.append(button("btn btn--primary", "Продолжить", () => {
+      closeEdgePanel();
+      resumeTicket({ ticketId: ticket.ticket_id, token: ticket.token, publicNo: ticket.public_no });
+    }));
+  } else if (kind === "escalated") {
+    container.append(button("btn btn--primary", "Открыть переписку", () => {
+      closeEdgePanel();
+      resumeTicket({ ticketId: ticket.ticket_id, token: ticket.token, publicNo: ticket.public_no });
+    }));
+  } else {
+    container.append(button("btn btn--primary", "Проблема вернулась", () => {
+      closeEdgePanel();
+      returnToProblem(ticket);
+    }));
+  }
+}
+
+// «Проблема вернулась»: новое обращение, привязанное к старому. Старое
+// остаётся закрытым — используем ЕГО ticket_id/token как parent_*, но
+// у себя заводим совершенно новый ticketId (он придёт в следующем ответе).
+function returnToProblem(ticket) {
+  state.conv++;
+  stopPolling();
+  state.ticketId = null;
+  state.token = null;
+  state.lastMsgId = 0;
+  state.lastPublicNo = null;
+  state.done = false;
+  state.lastClassifyKey = null;
+  clearSaved();
+  hideResume();
+
+  feedEl.replaceChildren();
   setMode("chat");
-  const msg = addBotMessage("Опишите свою проблему, и мы попытаемся её решить.");
+  state.pendingParent = { ticketId: ticket.ticket_id, token: ticket.token };
+
+  const msg = addBotMessage("Прошлое обращение закрыто. Опишите, что снова не работает — "
+    + "я перенесу контекст из прошлого обращения.");
   scrollToMessage(msg.row);
   inputEl.focus();
 }
