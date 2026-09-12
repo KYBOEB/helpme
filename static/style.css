@@ -1451,3 +1451,81 @@ button { font: inherit; color: inherit; }
   .logo-piece { height: 1.5rem; }
   .empty-kicker { margin-bottom: 1.75rem; }
 }
+
+/* ==========================================================================
+   КРЕСТИК ПАНЕЛИ — правый верхний угол
+   Правила .edge-panel--left/.edge-panel--right выше по файлу специфичнее
+   одиночного .edge-panel-close, поэтому их left/right надо перебить явно:
+   иначе кнопка возвращается к левому краю и налезает на заголовок панели.
+   ========================================================================== */
+
+.edge-panel--left .edge-panel-close,
+.edge-panel--right .edge-panel-close {
+  left: auto;
+  right: 0.75rem;
+  border-radius: 50%;
+}
+
+/* Заголовку панели оставляем место под кнопку, чтобы длинный текст
+   не подлезал под неё. */
+.edge-panel > :first-child { padding-right: 2.75rem; }
+
+.edge-tab-short { display: none; }
+
+/* ==========================================================================
+   ТЕЛЕФОН: вкладки вместо боковых «языков» — нижняя панель
+   На узком экране два вертикальных «языка» по краям перекрывают и текст,
+   и поле ввода. Внизу двумя кнопками это привычный и опрятный вид.
+   ========================================================================== */
+
+@media (max-width: 700px) {
+  .edge-tab {
+    top: auto;
+    bottom: 0;
+    transform: none;
+    width: 50%;
+    height: 3.25rem;
+    padding: 0;
+    clip-path: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
+  }
+
+  .edge-tab--left { left: 0; border-right: 1px solid rgba(255, 255, 255, 0.22); }
+  .edge-tab--right { right: 0; }
+
+  .edge-tab--left.is-hidden,
+  .edge-tab--right.is-hidden { transform: translateY(110%); }
+
+  .edge-tab-label { display: none; }
+
+  .edge-tab-short {
+    display: inline;
+    writing-mode: horizontal-tb;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  /* Место под нижнюю панель, иначе она накрывает поле ввода и плитки. */
+  .dock { padding-bottom: calc(3.25rem + env(safe-area-inset-bottom)); }
+  .empty { padding-bottom: calc(3.5rem + 6vh); }
+  .feed { padding-bottom: 1.5rem; }
+
+  /* Панель не должна залезать под нижние кнопки. */
+  .edge-panel {
+    width: 100%;
+    max-width: none;
+    border-radius: 0;
+    padding-bottom: calc(3.75rem + env(safe-area-inset-bottom));
+  }
+
+  /* Сдвигать фон на телефоне незачем: панель закрывает экран целиком. */
+  .page-shell.is-shifted-right,
+  .page-shell.is-shifted-left { transform: none; }
+
+  /* Полоса «незавершённое обращение» съедала треть экрана. */
+  .resume { padding: 0.75rem 0.875rem; }
+  .resume-text { font-size: 0.9375rem; margin-bottom: 0.5rem; }
+  .resume-actions { display: flex; gap: 0.5rem; }
+  .resume-actions .btn { flex: 1; min-height: 2.5rem; padding: 0.4rem 0.75rem; }
+}

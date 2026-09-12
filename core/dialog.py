@@ -377,7 +377,11 @@ def _assist(db: Session, ticket: Ticket, user_text: str,
     answer = assist.general_help(safe_text, ticket.category or "не определено",
                                  exclude_steps=already_shown)
     if answer is None:
-        # Нечего добавить сверх того, что уже не помогло, — зовём человека.
+        # Сюда попадаем, только если модель не ответила вовсе или все её шаги
+        # оказались опасными. Повторы больше не приводят к молчанию — отбор
+        # в core/assist.py гарантирует непустой ответ при непустом входе.
+        log.info("общая рекомендация не получена, зовём специалиста "
+                 "(обращение %s)", ticket.id)
         return _escalate(db, ticket, "подходящая статья не найдена")
 
     ticket.assist_used = True

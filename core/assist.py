@@ -70,9 +70,18 @@ FALSE_PROMISE = re.compile(
 
 SAFE_INTRO = "Готовой инструкции для этого случая в базе знаний нет. Попробуем общие шаги — они безопасны."
 
-# Страховка на случай, если модель всё же посоветует лишнего
+# Страховка на случай, если модель всё же посоветует лишнего.
+#
+# Опасно не слово «удалить», а ЧТО удаляют. Прежняя версия ловила «удалённый
+# доступ» и «в формате PDF» — и отбрасывала ВЕСЬ ответ целиком. Из-за этого
+# ИИ-ассистент молчал на обращениях вроде «нужен доступ к сетевой папке»,
+# где «удалённый доступ» встречается почти неизбежно, и обращение уходило
+# специалисту, хотя совет был безопасным.
 DANGEROUS = re.compile(
-    r"(?i)(удали|снеси|формат|отключ\w*\s+(антивирус|защит|брандмауэр|firewall)"
+    r"(?i)((?<!без )(?<!не )удал(?!ённ|енн)\w*\s+(?:\w+\s+){0,2}?"
+    r"(файл|папк|документ|данны|диск|раздел|систем|учётн|учетн)"
+    r"|снес(и|ти)|формати(ру|рова)\w*"
+    r"|отключ\w*\s+(антивирус|защит|брандмауэр|firewall)"
     r"|реестр|regedit|сброс\w*\s+(до\s+)?заводск|переустанов\w*\s+(систем|windows)"
     r"|system32|rm\s+-rf|введите\s+пароль)"
 )
@@ -110,7 +119,17 @@ _SYNONYMS = {
     "устройства": "устройство", "устройстве": "устройство",
 }
 
-_DUP_THRESHOLD = 0.6
+# Порог поднят с 0,6 до 0,78, и добавлено требование минимум трёх общих слов.
+# На шести-семи значимых словах в шаге доля 0,6 давала совпадение уже при двух
+# общих словах — «проверьте подключение к сети» и «проверьте настройки сети»
+# считались одним шагом. Из-за этого отсеивались все предложенные шаги сразу,
+# и обращение уходило специалисту вместо совета.
+_DUP_THRESHOLD = 0.65
+_DUP_MIN_COMMON = 3
+# Сколько шагов оставить, если фильтр посчитал повторами ВСЕ.
+# Молчание хуже повтора: пользователь в этом случае вообще не получает совета,
+# а сразу переадресуется к специалисту. Поэтому оставляем самые непохожие.
+_KEEP_IF_ALL_DROPPED = 2
 
 
 # Грубое отсечение окончаний. Не морфология, а замена ей: «настройках»
@@ -154,21 +173,52 @@ def _looks_same(a: str, b: str) -> bool:
     ta, tb = _tokens(a), _tokens(b)
     if not ta or not tb:
         return False
-    overlap = len(ta & tb) / min(len(ta), len(tb))
-    return overlap >= _DUP_THRESHOLD
+    common = len(ta & tb)
+    if common < _DUP_MIN_COMMON:
+        return False
+    return common / min(len(ta), len(tb)) >= _DUP_THRESHOLD
+
+
+def _similarity(step: str, shown: list[str]) -> float:
+    """Насколько шаг похож на самый близкий из уже показанных."""
+    ta = _tokens(step)
+    best = 0.0
+    for other in shown:
+        tb = _tokens(other)
+        if not ta or not tb:
+            continue
+        common = len(ta & tb)
+        best = max(best, common / min(len(ta), len(tb)))
+    return best
 
 
 def _drop_repeats(steps: list[str], already_shown: list[str]) -> list[str]:
-    """Выбросить шаги, которые пользователь уже видел и которые не помогли."""
-    if not already_shown:
+    """Выбросить шаги, которые пользователь уже видел и которые не помогли.
+
+    Никогда не возвращает пустой список при непустом входе. Раньше возвращал,
+    и это выглядело как поломка: ИИ-ассистент молчал, а обращение сразу уходило
+    специалисту. Если фильтр счёл повторами всё, оставляем самые непохожие —
+    повтор пережить легче, чем отсутствие ответа.
+    """
+    if not already_shown or not steps:
         return steps
-    kept = []
+
+    kept, dropped = [], []
     for step in steps:
         if any(_looks_same(step, shown) for shown in already_shown):
             log.info("шаг отброшен как повтор уже показанного: %s", step[:60])
+            dropped.append(step)
             continue
         kept.append(step)
-    return kept
+
+    if kept:
+        return kept
+
+    rescued = sorted(dropped, key=lambda st: _similarity(st, already_shown))
+    rescued = rescued[:_KEEP_IF_ALL_DROPPED]
+    log.info("все шаги сочтены повторами — оставляем %s наименее похожих",
+             len(rescued))
+    return rescued
 
 
 def _sanitize(answer: AnswerResult) -> AnswerResult:
@@ -179,6 +229,53 @@ def _sanitize(answer: AnswerResult) -> AnswerResult:
             log.info("вступление обещало специалиста, заменено нейтральным")
         answer.text = SAFE_INTRO
     return answer
+
+
+def _parse(raw: str) -> tuple[str, list[str]]:
+    """Разобрать ответ модели в пару «вступление, шаги».
+
+    Модель просят отвечать строками «ВСТУПЛЕНИЕ:» и «ШАГ:», но она регулярно
+    добавляет разметку: «**ШАГ:**», «- ШАГ:», «1. ШАГ:». Строгая проверка
+    начала строки такие ответы теряла целиком, и пользователь вместо совета
+    получал переадресацию к специалисту.
+    """
+    intro, steps = "", []
+    for line in raw.splitlines():
+        # снимаем маркеры списка, нумерацию и жирный шрифт
+        clean = re.sub(r"^[\s>*\-–—•]+", "", line).strip()
+        clean = re.sub(r"^\d+[.)]\s*", "", clean)
+        clean = clean.replace("**", "").replace("__", "").strip()
+        upper = clean.upper()
+        if upper.startswith("ВСТУПЛЕНИЕ"):
+            intro = clean.split(":", 1)[1].strip() if ":" in clean else ""
+        elif upper.startswith("ШАГ"):
+            body = clean.split(":", 1)[1].strip() if ":" in clean else ""
+            if body:
+                steps.append(body)
+
+    # Запасной путь: модель проигнорировала формат и написала обычный список.
+    # Лучше взять из него шаги, чем промолчать и отправить человека к оператору.
+    if not steps:
+        for line in raw.splitlines():
+            m = re.match(r"^[\s>*\-–—•]*(?:\d+[.)])?\s*(.{40,})$", line.strip())
+            if not m:
+                continue
+            body = m.group(1).replace("**", "").strip()
+            low = body.lower()
+            # Вступление в шаги не берём: оно объясняет, что инструкции нет,
+            # а не говорит, что делать.
+            if low.startswith("вступление") or "в базе знаний нет" in low \
+                    or "готовой инструкции" in low:
+                if not intro:
+                    intro = body
+                continue
+            steps.append(body)
+        if steps and not intro:
+            intro = ""
+        log.info("общая рекомендация: формат не соблюдён, разобрали как список — "
+                 "шагов %s", len(steps))
+
+    return intro, steps
 
 
 def general_help(user_text: str, category: str,
@@ -223,20 +320,25 @@ def general_help(user_text: str, category: str,
     if not raw:
         return None
 
-    if DANGEROUS.search(raw):
-        log.warning("общая рекомендация отклонена фильтром безопасности")
-        return None
-
-    intro, steps = "", []
-    for line in raw.splitlines():
-        line = line.strip()
-        if line.upper().startswith("ВСТУПЛЕНИЕ:"):
-            intro = line.split(":", 1)[1].strip()
-        elif line.upper().startswith("ШАГ:"):
-            steps.append(line.split(":", 1)[1].strip())
+    intro, steps = _parse(raw)
 
     if not steps:
+        log.warning("общая рекомендация: не удалось разобрать ответ модели, "
+                    "первые 200 символов: %s", raw[:200].replace("\n", " | "))
         return None
+
+    # Опасные шаги выбрасываем ПОШТУЧНО, а не отменяем весь ответ:
+    # один неудачный совет не повод молчать, когда остальные безопасны.
+    safe = []
+    for step in steps:
+        if DANGEROUS.search(step):
+            log.warning("шаг отклонён фильтром безопасности: %s", step[:80])
+            continue
+        safe.append(step)
+    if not safe:
+        log.warning("общая рекомендация: все шаги отклонены фильтром безопасности")
+        return None
+    steps = safe
 
     # Постфильтр поверх правила в промпте: правилам модель следует не всегда,
     # а повтор уже провалившихся шагов пользователь читает как «меня не слушают».

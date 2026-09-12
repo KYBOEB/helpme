@@ -9,9 +9,9 @@
        "app.js" браузер запросил бы как /app.js и получил бы 404 — чат не
        загрузился бы вовсе. Версия обязательна: без неё браузер отдаёт старый
        файл из кэша, и это выглядит как «всё сломалось». -->
-  <link rel="stylesheet" href="/static/style.css?v=10">
+  <link rel="stylesheet" href="/static/style.css?v=11">
   <!-- Не type="module": модули не грузятся при открытии через file:// -->
-  <script src="/static/app.js?v=10" defer></script>
+  <script src="/static/app.js?v=11" defer></script>
 </head>
 <body>
   <div class="app" data-screen="home">
@@ -160,9 +160,13 @@
          крестиком сбоку. -->
     <button class="edge-tab edge-tab--left" id="edge-tab-history" type="button">
       <span class="edge-tab-label">История обращений</span>
+      <!-- Короткая подпись для телефона: там вкладки превращаются в нижнюю
+           панель, и длинный текст в неё не помещается. -->
+      <span class="edge-tab-short">Обращения</span>
     </button>
     <button class="edge-tab edge-tab--right" id="edge-tab-search" type="button">
       <span class="edge-tab-label">Поиск по базе знаний</span>
+      <span class="edge-tab-short">База знаний</span>
     </button>
 
     <!-- Клик по подложке закрывает панель. -->
